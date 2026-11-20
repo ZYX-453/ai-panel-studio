@@ -6,7 +6,14 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
+    // 显式绑 IPv4：默认只监听 ::1，浏览器写 127.0.0.1 会连不上，
+    // 而文档、CORS 白名单、截图脚本里用的都是 127.0.0.1
+    host: '127.0.0.1',
     port: 5173,
+    // 端口被占就直接报错，不要自动跳到 5174：
+    // 文档、后端 CORS 白名单、截图脚本里写的都是 5173，
+    // 悄悄换端口会让人对着一个"看起来一样但其实是旧实例"的页面排查半天。
+    strictPort: true,
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',

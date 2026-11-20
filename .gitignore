@@ -31,3 +31,7 @@ _tmp/
 
 # 截图与临时产物
 _shots/
+shots/
+
+# vite 改配置时留下的临时文件
+frontend/vite.config.ts.timestamp-*.mjs

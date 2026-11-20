@@ -298,7 +298,11 @@ button { font: inherit; color: inherit; }
 .confirm-grid {
   display: grid;
   gap: var(--s3);
-  grid-template-columns: repeat(auto-fill, minmax(268px, 1fr));
+  /* 268px 在 1026px 的内容宽里正好凑 3 列，于是 4 位专家必然排成 3+1，
+     左下角空两格。列数按人数是 4 / 6，两个都能被 2 整除：
+     4 位排 2×2、6 位排 2×3，怎么都不会留下半排。
+     min() 是防窄屏溢出：容器窄于 420px 时退回 1 列，而不是横向撑破。 */
+  grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr));
 }
 
 .pcard {

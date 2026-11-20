@@ -79,15 +79,23 @@ Accept: text/event-stream
 
 **用 GET 而不是 POST**：这里没有请求体（不限长中文议题），且需要浏览器原生断线重连语义。
 
-事件格式（`id:` 即 seq，浏览器断线重连会自动带 `Last-Event-ID`）：
+事件格式（`id:` 即事件序号，浏览器断线重连会自动带 `Last-Event-ID`）：
 
 ```
 id: 12
 event: utterance
-data: {"seq":12,"panelist_id":"p3","name":"许巍","title":"SaaS 公司 CTO",
+data: {"utterance_seq":7,"utterance_id":"u_d7f3a91_007_a1b2c3","panelist_id":"p3",
+       "name":"许巍","title":"SaaS 公司 CTO",
        "content":"我不同意弱连接这个说法。远程之后我们跨部门的连接反而变多了，因为不用约会议室。",
-       "intent":"反驳","reply_to_seq":9,"phase":"CLASH"}
+       "intent":"反驳","reply_to_utterance_seq":9,"phase":"CLASH"}
 ```
+
+**字段名刻意区分 `seq` 与 `utterance_seq`**：SSE 的 `id:` 是**事件序号**（一条发言会产生 3 个事件：准备发言 / 发言 / 待机），
+而 `utterance_seq` 是**第几句发言**。两者数值不相等。早期版本在 payload 里也写成 `seq`，
+结果同一个名字在事件里指了两个东西 —— 这是"同屏两套口径"最典型的起点，已改掉。
+
+**同一份 payload 有两个产生者**：运行时由 `backend/app/engine.py` 写出，样例数据由 `scripts/init_db.py` 投影出来。
+两边的字段集必须逐字相同，由 `backend/tests/test_event_shape_parity.py` 守住 —— 这条测试是真的抓到过两处分叉（`seq` vs `utterance_seq`、多带 `consensus_version`）。
 
 **事件类型全表**
 

@@ -91,6 +91,7 @@ def project_events(conn: sqlite3.Connection) -> int:
                     "utterance",
                     {
                         "utterance_seq": useq,
+                        "utterance_id": uid,
                         "panelist_id": pid,
                         "name": pname,
                         "title": ptitle,

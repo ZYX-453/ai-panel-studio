@@ -23,6 +23,11 @@ RESOLVE_THRESHOLD = 0.5
 #: 判重门槛：几乎完全相同才算重复
 DEDUPE_THRESHOLD = 0.95
 
+#: 模型显式声明「这条已解决」时的匹配门槛。
+#: 比被动解决的 0.5 高得多：这里是模型主动点名，本该逐字照抄；
+#: 门槛设高是为了让"抄错半句"直接失效而不是误删另一条分歧。
+RESOLVE_EXPLICIT_THRESHOLD = 0.9
+
 
 def _norm(text: str) -> str:
     return " ".join(str(text).split()).strip()
@@ -50,13 +55,38 @@ def merge(
     disputes: list[str] | tuple[str, ...],
     based_on_seq: int,
     max_points: int = 6,
+    resolved: list[str] | tuple[str, ...] = (),
+    max_disputes: int = 6,
 ) -> Consensus:
-    """把一次抽取结果并进当前状态，返回新的共识对象（不改动入参）。"""
+    """把一次抽取结果并进当前状态，返回新的共识对象（不改动入参）。
+
+    `resolved` 是模型的**显式声明**：这几条旧分歧已经谈拢了。
+    在它之前，分歧只能靠"与某条新共识措辞相似度 >= 0.5"被动消失，
+    而分歧和共识的写法天生不同（分歧写"周报该不该取消"，共识写"周报不必
+    当唯一载体"），相似度永远够不到 —— 于是分歧只增不减。
+
+    实测后果很硬：一场 2 人讨论从头到尾分歧恒为 6 条，并且在增长，
+    而 D1 的收敛条件是"连续两版零分歧"，这条路径**数学上就不可能走到**。
+    加一个显式通道，收敛才有机会发生。
+
+    代码在这里仍然握着裁决权：`resolved` 只按**高相似度（0.9）逐条匹配**
+    已有分歧，匹配不上就忽略。模型写错、写多、或者凭空捏一条出来，
+    都不会造成误删 —— 它只能删掉清单里真实存在的那几条。
+    """
     merged_points = list(prev.points)
     merged_disputes = list(prev.disputes)
 
     # 水位线只进不退：乱序到达的旧结果不能把"基于前 N 句"往回拨
     seq = max(prev.based_on_seq, int(based_on_seq))
+
+    # 0. 显式解决：先按模型点名的条目移除旧分歧
+    if resolved:
+        hit = {_norm(r) for r in resolved if _norm(r)}
+        merged_disputes = [
+            d
+            for d in merged_disputes
+            if not any(_similar(_norm(d), r) >= RESOLVE_EXPLICIT_THRESHOLD for r in hit)
+        ]
 
     # 1. 并入新共识（去重）
     for p in points:
@@ -88,6 +118,9 @@ def merge(
 
     # 4. 面板是给人看的，堆太多就没人读了
     merged_points = merged_points[:max_points]
+    # 分歧超限时砍掉**最新**的：越靠前的越接近原始立场分歧，
+    # 后面的多半是讨论中衍生的执行细节（"三行说明由谁核实"这类）。
+    merged_disputes = merged_disputes[:max_disputes]
 
     changed = (
         tuple(merged_points) != prev.points

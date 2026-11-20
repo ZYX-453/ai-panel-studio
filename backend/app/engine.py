@@ -511,11 +511,15 @@ class Engine:
         prev: Consensus,
         seats: tuple[Seat, ...],
     ) -> Consensus | None:
+        # 分区给：模型要能**逐字**引用某条旧分歧才能把它写进 resolved，
+        # 混成一坨它只能概括，概括出来的东西匹配不上（见 consensus.merge 的说明）。
+        prev_points = "\n".join(f"- {p}" for p in prev.points) or "（无）"
+        prev_disputes = "\n".join(f"- {d}" for d in prev.disputes) or "（无）"
         prompt = build_consensus_prompt(
             topic=topic,
             transcript=turns,
             seats=seats,
-            previous="\n".join(list(prev.points) + list(prev.disputes)),
+            previous=f"【已达成共识】\n{prev_points}\n\n【仍未解决的分歧】\n{prev_disputes}",
         )
         try:
             res = self.client.chat(
@@ -538,9 +542,12 @@ class Engine:
             return None
         points = [str(x).strip() for x in payload.get("points") or [] if str(x).strip()]
         disputes = [str(x).strip() for x in payload.get("disputes") or [] if str(x).strip()]
+        resolved = [str(x).strip() for x in payload.get("resolved") or [] if str(x).strip()]
         based_on = int(payload.get("based_on_seq") or turns[-1].seq)
 
-        merged = merge(prev, points, disputes, based_on_seq=based_on)
+        merged = merge(prev, points, disputes, based_on_seq=based_on, resolved=resolved)
+        if resolved:
+            log.info("[%s] 模型声明已解决 %d 条分歧", did, len(resolved))
         if merged.version != prev.version:
             self.store.save_consensus(
                 did=did,

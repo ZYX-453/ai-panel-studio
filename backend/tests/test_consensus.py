@@ -75,6 +75,53 @@ def test_dispute_promoted_to_point_when_resolved() -> None:
     assert "产线不能四天" in out.points
 
 
+# ---------------------------------------------------------------------------
+# 显式解决通道：模型点名，代码执行
+#
+# 为什么需要它：11-20 那场 2 人讨论，分歧从第 4 句到第 24 句恒为 6 条且在增长。
+# 靠"与某条新共识相似度 >= 0.5"被动消失这条路走不通 ——
+# 分歧写"周报该不该取消"，共识写"周报不必当唯一载体"，永远撞不上。
+# 于是 D1 的收敛条件（连续两版零分歧）在数学上不可能达成。
+# ---------------------------------------------------------------------------
+
+def test_explicit_resolved_removes_the_named_dispute() -> None:
+    prev = c(1, points=[], disputes=["周报该不该取消", "标签由谁打"], based_on_seq=4)
+    out = merge(
+        prev, points=[], disputes=[],
+        based_on_seq=8, resolved=["周报该不该取消"],
+    )
+    assert "周报该不该取消" not in out.disputes
+    assert "标签由谁打" in out.disputes, "只该删点名的那一条，别的不能连带消失"
+
+
+def test_resolved_cannot_delete_something_not_in_the_list() -> None:
+    """模型凭空写一条 resolved 不能造成误删 —— 裁决权在代码。"""
+    prev = c(1, points=[], disputes=["周报该不该取消"], based_on_seq=4)
+    out = merge(
+        prev, points=[], disputes=[],
+        based_on_seq=8, resolved=["模型自己编的一条分歧"],
+    )
+    assert "周报该不该取消" in out.disputes
+
+
+def test_resolved_ignores_near_miss_typo() -> None:
+    """抄错半句就失效，而不是"差不多就删"：门槛 0.9 是故意的。"""
+    prev = c(1, points=[], disputes=["周报该不该取消"], based_on_seq=4)
+    out = merge(
+        prev, points=[], disputes=[],
+        based_on_seq=8, resolved=["周报要不要取消"],
+    )
+    assert "周报该不该取消" in out.disputes
+
+
+def test_disputes_capped_keeping_earliest() -> None:
+    """分歧超限砍最新的：越靠前越接近原始立场，后面多半是执行细节。"""
+    prev = c(1, points=[], disputes=[f"D{i}" for i in range(6)], based_on_seq=4)
+    out = merge(prev, points=[], disputes=["新来的细节问题"], based_on_seq=8, max_disputes=6)
+    assert len(out.disputes) == 6
+    assert "新来的细节问题" not in out.disputes
+
+
 def test_points_and_disputes_are_disjoint() -> None:
     """同一条文字不能同时出现在两边，那是最刺眼的同屏矛盾。"""
     prev = c(1, points=[], disputes=["X"])

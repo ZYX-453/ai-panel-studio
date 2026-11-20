@@ -1,9 +1,12 @@
-"""打交付 zip：只装源码 + 文档 + 截图，不装依赖和数据库。
+"""打交付 zip：只装 git 追踪的文件。
 
-为什么要单独写一个脚本：交付包和仓库的"该包含什么"不是一回事。
-仓库要能被 `git clone` 后跑起来，所以不含 node_modules / .venv；
-但交付包是给评审直接解压看的，必须能一眼找到文档和截图，
-又不能夹带 82M 的依赖目录。两条口径分开写，才不会互相污染。
+为什么不自己维护排除清单：第一版是按后缀猜的，结果把 8 个
+`vite.config.ts.timestamp-*.mjs` 打进了包 —— `.gitignore` 早就声明它们是垃圾，
+可脚本有自己的规则，两套口径必然打架。现在改成直接问 git 要文件清单：
+交付包内容 == 评审 clone 下来的内容，这才是应该相等的东西。
+
+另一个理由是语义：这份作业的主交付物是仓库链接，zip 只是附件。
+两者内容不一致的话，附件就成了"另一份东西"，解释起来都是麻烦。
 
 用法：
     python scripts/pack.py                 # 输出到 ../交付/
@@ -11,52 +14,54 @@
 """
 from __future__ import annotations
 
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+NAME = "AI圆桌讨论-张宇翔-20230308060"
 
-# 目录级排除：依赖、缓存、运行时产物
-EXCLUDE_DIRS = {
-    ".git", ".venv", "venv", "node_modules", "dist", "__pycache__",
-    ".pytest_cache", ".vite", "shots", "_shots", ".tmp", "_tmp",
-}
+# 数据库初始化脚本和样例数据是交付物硬性要求，缺了直接报错，
+# 不要静悄悄打出一个"看起来完整"的包。
+MUST_HAVE = [
+    "README.md",
+    "scripts/init_db.py",
+    "db/schema.sql",
+    "db/seed.sql",
+    "docs/06-开发说明.md",
+    "docs/07-核心Prompt记录.md",
+    "docs/08-已完成与未完成.md",
+    "docs/09-工作流说明.md",
+    "docs/screenshots/03-live.png",
+]
 
-# 文件级排除：数据库、日志、临时文件、密钥
-EXCLUDE_SUFFIXES = {".pyc", ".pyo", ".log", ".db", ".db-wal", ".db-shm", ".tmp"}
-EXCLUDE_NAMES = {".DS_Store", "Thumbs.db", ".env"}
 
-
-def wanted(path: Path) -> bool:
-    if any(part in EXCLUDE_DIRS for part in path.parts):
-        return False
-    if path.name in EXCLUDE_NAMES or path.name.startswith(".env."):
-        return False
-    if path.name.startswith(".tmp"):
-        return False
-    return not (path.suffix in EXCLUDE_SUFFIXES)
+def tracked_files() -> list[Path]:
+    """git 追踪的文件；不是 git 仓库时退回文件系统遍历。"""
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=ROOT, capture_output=True, check=True,
+        ).stdout
+        rels = [p for p in out.decode("utf-8").split("\0") if p]
+        return sorted(ROOT / r for r in rels if (ROOT / r).is_file())
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        skip = {".git", "node_modules", ".venv", "__pycache__", "dist", "data"}
+        return sorted(
+            p for p in ROOT.rglob("*")
+            if p.is_file() and not (skip & set(p.relative_to(ROOT).parts))
+        )
 
 
 def main() -> int:
     out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT.parent / "交付"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / "AI圆桌讨论-张宇翔-20230308060.zip"
+    out = out_dir / f"{NAME}.zip"
 
-    files = sorted(p for p in ROOT.rglob("*") if p.is_file() and wanted(p.relative_to(ROOT)))
-
-    # 数据库初始化脚本和样例数据是交付物硬性要求，缺了直接报错，
-    # 不要静悄悄打出一个"看起来完整"的包。
-    must_have = [
-        "README.md",
-        "scripts/init_db.py",
-        "db/schema.sql",
-        "db/seed.sql",
-        "docs/09-工作流说明.md",
-        "docs/07-核心Prompt记录.md",
-    ]
-    names = {str(p.relative_to(ROOT)).replace("\\", "/") for p in files}
-    missing = [m for m in must_have if m not in names]
+    files = tracked_files()
+    names = {p.relative_to(ROOT).as_posix() for p in files}
+    missing = [m for m in MUST_HAVE if m not in names]
     if missing:
         print(f"[FAIL] 交付包缺少必需文件：{missing}")
         return 1

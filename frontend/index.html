@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Panel Studio · AI 圆桌演播厅</title>
+    <!--
+      FCP 保障：首屏骨架直接内联在 HTML 里，不等 JS 下载完就能上色。
+      需求写明「2 秒内首次内容上屏，不能出现空白屏」，而 SPA 默认是白屏等 JS，
+      所以这里用内联骨架 + 内联关键 CSS，React 挂载后整体替换。
+    -->
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --surface: #ffffff;
+        --border: #e3e6ec;
+        --text: #1a1d23;
+        --muted: #6b7280;
+        --accent: #b45309;
+      }
+      * { box-sizing: border-box; }
+      html, body, #root { height: 100%; margin: 0; }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Segoe UI", "Microsoft YaHei", -apple-system, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .boot {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+      .boot-bar {
+        height: 56px;
+        flex: none;
+        border-bottom: 1px solid var(--border);
+        background: var(--surface);
+        display: flex;
+        align-items: center;
+        padding: 0 20px;
+        gap: 10px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      .boot-dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: var(--accent);
+        animation: bootPulse 1.2s ease-in-out infinite;
+      }
+      @keyframes bootPulse { 0%,100% { opacity: .25 } 50% { opacity: 1 } }
+      .boot-body {
+        flex: 1;
+        padding: 28px 32px;
+        display: grid;
+        gap: 12px;
+        align-content: start;
+        max-width: 900px;
+        width: 100%;
+        margin: 0 auto;
+      }
+      .boot-line {
+        height: 64px;
+        border-radius: 10px;
+        background: linear-gradient(90deg, #eceef2 25%, #f4f6f8 37%, #eceef2 63%);
+        background-size: 400% 100%;
+        animation: bootShimmer 1.4s ease-in-out infinite;
+      }
+      @keyframes bootShimmer { 0% { background-position: 100% 50% } 100% { background-position: 0 50% } }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-dot, .boot-line { animation: none }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <!-- 骨架：React 挂载后会被替换 -->
+      <div class="boot">
+        <div class="boot-bar"><span class="boot-dot"></span>正在载入演播厅…</div>
+        <div class="boot-body">
+          <div class="boot-line"></div>
+          <div class="boot-line"></div>
+          <div class="boot-line"></div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

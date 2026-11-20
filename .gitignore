@@ -28,3 +28,6 @@ Thumbs.db
 # 临时文件
 _tmp/
 *.tmp
+
+# 截图与临时产物
+_shots/

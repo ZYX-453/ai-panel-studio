@@ -123,7 +123,10 @@ def to_seats(rows: list[PanelistRow]) -> tuple[Seat, ...]:
                 stance=r.stance,
                 catchphrase=str(r.persona.get("catchphrase") or ""),
                 focus=tuple(str(f) for f in focus),
-                attack=str(r.persona.get("attack") or ""),
+                # 兼容历史数据：改名之前入库的阵容，persona_json 里只有 attack。
+                # 迁移只在这一个边界上做一次，往下就只剩 target 一套口径，
+                # 不允许 prompt 层再各自去猜该读哪个键。
+                target=str(r.persona.get("target") or r.persona.get("attack") or ""),
                 title=r.title,
             )
         )

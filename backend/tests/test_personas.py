@@ -13,13 +13,17 @@ from app.personas import build_consensus_prompt, build_expert_prompt, build_host
 SEATS = (
     Seat(id="h", role="host", seat=0, name="陈立", stance="中立", catchphrase="先说结论"),
     Seat(id="e1", role="expert", seat=1, name="周敏", stance="远程伤害弱连接",
-         catchphrase="我做过一个追踪研究", focus=("弱连接", "创新扩散"), attack="拿个案当规律"),
+         catchphrase="我做过一个追踪研究", focus=("弱连接", "创新扩散"),
+         target="「远程只是把工位搬回家，沟通并不会变少」"),
     Seat(id="e2", role="expert", seat=2, name="许巍", stance="远程可运营",
-         catchphrase="在我们那儿是这么干的", focus=("异步协作",), attack="拿自己公司套所有人"),
+         catchphrase="在我们那儿是这么干的", focus=("异步协作",),
+         target="「物理距离决定协作质量，远程注定伤效率」"),
     Seat(id="e3", role="expert", seat=3, name="林雪", stance="应按岗位分层",
-         catchphrase="先分个类", focus=("岗位可远程性",), attack="把问题拖进分类学"),
+         catchphrase="先分个类", focus=("岗位可远程性",),
+         target="「远程是公司级开关，要么全开要么全关」"),
     Seat(id="e4", role="expert", seat=4, name="何远", stance="早期必须线下",
-         catchphrase="活下来最重要", focus=("默契形成",), attack="拿早期经验否定成熟期"),
+         catchphrase="活下来最重要", focus=("默契形成",),
+         target="「小公司更该一步到位搞远程」"),
 )
 
 TOPIC = "远程办公是否应该成为公司默认工作方式"
@@ -48,11 +52,39 @@ def test_expert_prompt_contains_own_identity() -> None:
     assert "我做过一个追踪研究" in p, "口头禅没进 prompt，角色就没有辨识度"
 
 
-def test_expert_prompt_carries_focus_and_blind_spot() -> None:
-    """关注点决定他看什么，盲区决定他容易错在哪 —— 两个都要写进去。"""
+def test_expert_prompt_carries_focus_and_target() -> None:
+    """关注点决定他看什么，靶子决定他朝谁开火 —— 两个都要写进去。
+
+    靶子这一栏原名 attack，存的是"这类人容易犯的错"。那个写法只会让模型
+    自我审查（"注意别翻车"），不会去攻击别人，实测 24 轮里二十多句都在互相补充。
+    现在要求的是"最想推翻的那句话"，并且必须带上"点名反驳"这个动作。
+    """
     p = build_expert_prompt(by_id("e1"), topic=TOPIC, transcript=turns(), seats=SEATS)
     assert "弱连接" in p
-    assert "拿个案当规律" in p
+    assert "「远程只是把工位搬回家，沟通并不会变少」" in p
+    assert "最想推翻" in p
+    assert "反驳" in p, "只给靶子不要求反驳，模型会把它当背景介绍"
+
+
+def test_no_self_censorship_instruction_left() -> None:
+    """旧的"注意不要在这里翻车"必须彻底消失。
+
+    它和新指令方向相反：一边让他自我审查，一边让他开火，
+    模型会折中成"温和地补充一点不同看法"——正是要治的那个毛病。
+    """
+    for seat in SEATS:
+        if seat.role != "expert":
+            continue
+        p = build_expert_prompt(seat, topic=TOPIC, transcript=turns(), seats=SEATS)
+        assert "容易犯的错" not in p
+        assert "不要在这里翻车" not in p
+
+
+def test_target_section_omitted_when_empty() -> None:
+    """模型偶尔不给 target。缺了就不渲染那一段，不能留一个空靶子让模型自己编。"""
+    bare = Seat(id="x", role="expert", seat=1, name="某人", stance="某立场")
+    p = build_expert_prompt(bare, topic=TOPIC, transcript=turns(), seats=(bare,))
+    assert "最想推翻" not in p
 
 
 def test_no_crosstalk_between_personas() -> None:

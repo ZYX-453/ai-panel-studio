@@ -49,7 +49,7 @@ ANGLES: tuple[dict[str, str], ...] = (
         "title": "组织行为学教授",
         "stance": "先别急着推进：它会削弱组织的隐性知识积累，短期收益不可持续",
         "catchphrase": "我做过一个追踪研究",
-        "attack": "用个案代替普遍规律",
+        "target": "「远程只是把工位搬回家，协作效率不受影响」",
         "focus": "弱连接、非正式交流、隐性知识",
         "tone": "学术腔，先给证据再给判断",
     },
@@ -58,7 +58,7 @@ ANGLES: tuple[dict[str, str], ...] = (
         "title": "SaaS 公司 CTO",
         "stance": "可以推进：问题在管理能力，不在方式本身",
         "catchphrase": "在我们那儿是这么干的",
-        "attack": "拿自己公司的规模套所有人",
+        "target": "「协作方式换个工具就能改，不需要动管理流程」",
         "focus": "执行细节、工具链、可度量性",
         "tone": "工程腔，爱举自己团队的例子",
     },
@@ -67,7 +67,7 @@ ANGLES: tuple[dict[str, str], ...] = (
         "title": "HR 咨询顾问",
         "stance": "不能一刀切：应按可适用性分层，否则两头都受损",
         "catchphrase": "先分个类",
-        "attack": "把复杂问题拖进分类学",
+        "target": "「所有人要么适合、要么都不适合，没有中间态」",
         "focus": "分层标准、政策落地、组织公平",
         "tone": "咨询腔，喜欢给框架",
     },
@@ -76,7 +76,7 @@ ANGLES: tuple[dict[str, str], ...] = (
         "title": "创业公司创始人",
         "stance": "看阶段：对早期团队是奢侈品，规模没上去之前谈它是本末倒置",
         "catchphrase": "活下来最重要",
-        "attack": "拿早期经验否定成熟期方法",
+        "target": "「小公司也该照搬大公司的制度，越早规范越好」",
         "focus": "资源约束、阶段差异、现金流",
         "tone": "直白、带情绪、爱打比方",
     },
@@ -85,7 +85,7 @@ ANGLES: tuple[dict[str, str], ...] = (
         "title": "一线运营主管",
         "stance": "看落地：决策成本不在决策者身上，所以执行时一定会变形",
         "catchphrase": "你去现场待一周就明白了",
-        "attack": "用执行层的困难否定方向",
+        "target": "「制度发下去大家就会照做，执行层不会打折扣」",
         "focus": "执行成本、真实流程、一线反馈",
         "tone": "务实，常说具体场景",
     },
@@ -94,7 +94,7 @@ ANGLES: tuple[dict[str, str], ...] = (
         "title": "组织经济学研究者",
         "stance": "看配套：根子在考核与激励没跟着改，光喊口号没用",
         "catchphrase": "看激励结构",
-        "attack": "把所有问题都归因到制度",
+        "target": "「只要方向对，人的行为自然会跟着变」",
         "focus": "激励机制、权责匹配、长期博弈",
         "tone": "冷静、爱拆因果链",
     },
@@ -144,7 +144,7 @@ def build_from_pool(topic: str, expert_count: int, seed: int = 0) -> list[dict[s
                 "color": COLORS[i - 1],
                 "persona": {
                     "catchphrase": angle["catchphrase"],
-                    "attack": angle["attack"],
+                    "target": angle["target"],
                     "focus": [f.strip() for f in angle["focus"].split("、")],
                     "tone": angle["tone"],
                 },
@@ -204,6 +204,18 @@ def validate(panel: list[dict[str, Any]], expert_count: int) -> None:
                 f"立场过近：{a['name']} 与 {b['name']} 相似度 {sim:.2f}"
             )
 
+    # 靶子也不能撞：两位专家想推翻同一句话，场上就成了齐射，
+    # 看着像交锋，其实是同一个人说了两遍。
+    # 门槛比立场更松（0.6）——靶子是整句带引号的话，公共字天然多，
+    # 用立场那档 0.45 会把正常的"不同角度打同一现象"误判成重合。
+    for a, b in itertools.combinations(experts, 2):
+        ta = str((a.get("persona") or {}).get("target") or "")
+        tb = str((b.get("persona") or {}).get("target") or "")
+        if ta and tb and _similar(ta, tb) >= 0.6:
+            raise LineupError(
+                f"靶子重合：{a['name']} 与 {b['name']} 想推翻的是同一句话"
+            )
+
 
 # --------------------------------------------------------------- 模型生成
 
@@ -212,7 +224,7 @@ _LINEUP_SCHEMA_HINT = """
 {
   "experts": [
     {"name": "姓名", "title": "头衔", "stance": "一句话立场",
-     "catchphrase": "口头禅", "attack": "这类人容易犯的错", "tone": "说话风格"}
+     "catchphrase": "口头禅", "target": "他最想推翻的那个说法", "tone": "说话风格"}
   ]
 }
 """
@@ -228,8 +240,11 @@ def build_lineup_prompt(topic: str, expert_count: int) -> str:
 2. 立场要具体到可以被人反驳，不要写"需要辩证看待"这类和稀泥的话。
 3. 姓名用中文，头衔要真实可信（教授 / CTO / 顾问 / 创始人 / 一线主管 之类）。
 4. 每人给一句口头禅，要像真人说话，不要写"我认为"这种废话。
-5. attack 写"这类人容易犯的错"，用于让其他人有攻击面，不要写褒义词。
-6. 不要出现真实存在的公众人物姓名。
+5. target 写「他最想推翻的那个说法」：必须是一句**别人可能真的会说出口的断言**，
+   用引号括起来，例如"只要方向对，人的行为自然会变"。不要写性格评价（"过于乐观"），
+   不要写方法论错误（"以偏概全"）——那些是旁白，不是靶子。这一栏决定他上场后朝谁开火。
+6. 各人的 target 之间也不能是同一个靶子，至少要落在不同的人或不同的做法上。
+7. 不要出现真实存在的公众人物姓名。
 {_LINEUP_SCHEMA_HINT}"""
 
 
@@ -272,7 +287,9 @@ def parse_model_lineup(raw: str, topic: str) -> list[dict[str, Any]]:
                 "color": COLORS[(i - 1) % len(COLORS)],
                 "persona": {
                     "catchphrase": str(e.get("catchphrase") or "")[:20],
-                    "attack": str(e.get("attack") or "")[:40],
+                    # 模型偶尔仍按旧字段名回 attack，这里一起收；
+                    # 但下游只认 target，不再有第二套写法。
+                    "target": str(e.get("target") or e.get("attack") or "")[:48],
                     "focus": [s.strip() for s in str(e.get("stance") or "").replace("，", " ").split()[:3]],
                     "tone": str(e.get("tone") or "")[:30],
                 },

@@ -101,6 +101,11 @@ data: {"seq":12,"panelist_id":"p3","name":"许巍","title":"SaaS 公司 CTO",
 | `error` | 单次调用失败但可继续 | `panelist_id, code` | 面板角标（不打断） |
 | `ping` | 每 15s | — | 保活，防代理断连 |
 
+**`ping` 是传输层注释，不入事件表**：它以 SSE 注释行（`: ping\n\n`）发出，不占 `seq`、不写库。
+理由很实际——保活是"当下这条连接还活着"的信号，把它持久化只会污染重放：
+回放一场昨天的讨论时，重放出一堆昨天的 ping 没有任何意义。
+所以 `event.type` 的 CHECK 约束里刻意不包含 `ping`。
+
 **硬性约束**：`panelist_state` 与 `utterance` 是两类事件，前端两条渲染路径。**"举手"只在 `panelist_state` 里以 `state=准备发言` 出现，永远不进 transcript。**
 
 ### 2.4 快照

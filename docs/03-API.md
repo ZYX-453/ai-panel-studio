@@ -87,7 +87,8 @@ event: utterance
 data: {"utterance_seq":7,"utterance_id":"u_d7f3a91_007_a1b2c3","panelist_id":"p3",
        "name":"许巍","title":"SaaS 公司 CTO",
        "content":"我不同意弱连接这个说法。远程之后我们跨部门的连接反而变多了，因为不用约会议室。",
-       "intent":"反驳","reply_to_utterance_seq":9,"phase":"CLASH"}
+       "intent":"反驳","reply_to_utterance_seq":9,"phase":"CLASH",
+       "created_at":"2026-11-19T09:13:32"}
 ```
 
 **字段名刻意区分 `seq` 与 `utterance_seq`**：SSE 的 `id:` 是**事件序号**（一条发言会产生 3 个事件：准备发言 / 发言 / 待机），
@@ -103,11 +104,22 @@ data: {"utterance_seq":7,"utterance_id":"u_d7f3a91_007_a1b2c3","panelist_id":"p3
 |---|---|---|---|
 | `phase` | 阶段切换 | `phase` | 顶部阶段指示 |
 | `panelist_state` | 待机/准备发言/发言中 | `panelist_id, state` | **仅侧边小窗** |
-| `utterance` | 一条发言完成 | `seq, content, intent, reply_to_seq` | **仅 transcript** |
+| `utterance` | 一条发言完成 | `utterance_seq, utterance_id, panelist_id, content, intent, reply_to_utterance_seq, phase, created_at` | **仅 transcript** |
 | `consensus` | 每 K 条抽取后 | `version, points[], disputes[]` | 共识面板 |
 | `ended` | 结束 | `reason, turns` | 收尾提示 |
 | `error` | 单次调用失败但可继续 | `panelist_id, code` | 面板角标（不打断） |
 | `ping` | 每 15s | — | 保活，防代理断连 |
+
+**序号从 1 开始**：`event.seq` 的取值是 `1..N`，与运行时引擎的 `next_seq` 一致。
+投影脚本早期用 `enumerate(events)` 从 0 起，而 `/stream` 的查询是 `WHERE seq > from_seq` ——
+`from_seq=0` 时第 0 帧（开场 `phase`）会被静默过滤，回看时永远缺「开场」阶段标识。
+现在两侧都从 1 起，`scripts/init_db.py` 的自检与 `test_event_shape_parity.py` 双重守住。
+
+**业务 `error` 上线时叫 `panel_error`**：`error` 是 EventSource 的保留事件名，
+浏览器在连接断开时也会派发一个 `error`。两个语义挤进同一个监听器时，前端分不清
+"连接断了"和"有一句没生成出来"，实测会让断线判断被业务事件污染。
+所以序列化层做一次转义（`api.py` 的 `SSE_EVENT_ALIAS`），**数据库里仍然是 `error`**，
+只有线上叫 `panel_error`，前端 `api.ts` 的 `WIRE_NAME` 再转回来。
 
 **`ping` 是传输层注释，不入事件表**：它以 SSE 注释行（`: ping\n\n`）发出，不占 `seq`、不写库。
 理由很实际——保活是"当下这条连接还活着"的信号，把它持久化只会污染重放：
@@ -164,8 +176,10 @@ GET /api/discussions/d_7f3a91
 [d_7f3a91] seq=12 type=utterance panelist=p3 intent=反驳 latency_ms=1840 tokens=312 retry=0
 ```
 
-`/api/health` 返回 `{"ok":true,"data":{"db":"ok","llm":{"endpoint":"deepseek","model":"...","reachable":true}}}`
-——**只报 endpoint 和 model 名，绝不回显 key**。
+`/api/health` 返回
+`{"ok":true,"data":{"db":"ok","llm":{"endpoint":"https://api.deepseek.com","model":"deepseek-chat","key_configured":true}}}`
+——**只报 endpoint、model 名和"配没配 key"这个布尔值，绝不回显 key 本身**
+（连前四位都不给：脱敏过的片段照样能拿去撞库）。
 
 ---
 

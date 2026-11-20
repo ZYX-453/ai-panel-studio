@@ -92,6 +92,32 @@ def test_prompt_forbids_restating_others() -> None:
     assert "复述" in p
 
 
+def test_prompt_forbids_uniform_sentence_pattern() -> None:
+    """实测：一场 24 句里有 13 句都以「……我认，但……」开头，四个专家读成一个人。
+
+    角色的区分不只靠立场和口头禅，句式也一样 —— 所以这条写进硬性规则。
+    """
+    p = build_expert_prompt(by_id("e1"), topic=TOPIC, transcript=turns(), seats=SEATS)
+    assert "我认" in p and "句式" in p or "先肯定对方" in p
+
+
+def test_prompt_repeat_warning_only_when_asked() -> None:
+    """重复预警不能常驻：常驻等于告诉模型"你每次都复读"，反而误导。"""
+    plain = build_expert_prompt(by_id("e1"), topic=TOPIC, transcript=turns(), seats=SEATS)
+    warned = build_expert_prompt(
+        by_id("e1"), topic=TOPIC, transcript=turns(), seats=SEATS, avoid_repeat=True
+    )
+    assert "【重复预警】" not in plain
+    assert "【重复预警】" in warned
+
+
+def test_expert_prompt_lists_his_own_earlier_lines() -> None:
+    """窗口里大多是别人，模型对自己的上一句没有记忆 —— 必须单独列出来。"""
+    p = build_expert_prompt(by_id("e1"), topic=TOPIC, transcript=turns(), seats=SEATS)
+    assert "【你刚才说过的】" in p
+    assert "第2句 你：弱连接会受损。" in p
+
+
 def test_prompt_forbids_json_output() -> None:
     """需求要求禁止把 JSON 原文显示到页面，最直接的防线是 prompt 里不要求结构化输出。"""
     p = build_expert_prompt(by_id("e1"), topic=TOPIC, transcript=turns(), seats=SEATS)

@@ -22,6 +22,7 @@ from typing import Any, Callable
 
 from . import lineup as lineup_mod
 from .consensus import merge
+from .content import classify_intent, is_repeat, most_similar
 from .llm import LLMClient, LLMError, strip_code_fence
 from .models import Consensus, Seat, Turn
 from .personas import build_consensus_prompt, build_expert_prompt, build_host_prompt
@@ -34,6 +35,12 @@ PHASES = ("OPENING", "EXPLORE", "CLASH", "CLOSING")
 
 #: 每 K 条发言抽取一次共识。太小会把成本推高且噪声大，太大则屏幕上长时间不动
 CONSENSUS_EVERY = 3
+
+#: 专家单句的长度上限（字符）。prompt 里写的是 60 字，这里留 5 字余量：
+#: 模型对"字数"这种量化约束遵守得很差（实测 28% 越界，最长 82 字），
+#: 所以只能事后量。超了让重说一次，而不是截断 —— 截断会切掉半句，
+#: 读起来比长一点更糟。
+MAX_SPEECH_CHARS = 65
 
 #: 收敛所需的最小轮数。低于这个数就宣布"已达成共识"会显得敷衍，
 #: 因为 EXPLORE 阶段本来就是用来暴露分歧的
@@ -303,12 +310,21 @@ class Engine:
 
             self._emit_state(did, speaker, "发言中")
             reply_to_id = self._seq_to_uid(did, decision.respond_to_seq)
+            # 意图由**说出来的是什么**决定，不用调度器的 intent_hint。
+            # hint 是排班表猜的：它只知道"点了谁的名字"和"谁连说了两句"，
+            # 剩下全落到「补充」。实测 22 句里 18 句都是「补充」，
+            # 而界面上还标着「交锋」，两套口径自己打自己。
+            intent = classify_intent(
+                content,
+                phase=phase,
+                first_time=not any(t.speaker_id == speaker.id and t.text for t in turns),
+            )
             uid = self._record_utterance(
                 did=did,
                 speaker=speaker,
                 seq=turn_index,
                 phase=phase,
-                intent=decision.intent_hint,
+                intent=intent,
                 content=content,
                 reply_to_id=reply_to_id,
             )
@@ -318,7 +334,7 @@ class Engine:
                 seq=turn_index,
                 speaker_id=speaker.id,
                 text=content,
-                intent=decision.intent_hint,
+                intent=intent,
                 mentions=extract_mentions(content, seats),
             )
             turns.append(turn)
@@ -374,9 +390,82 @@ class Engine:
         seats: tuple[Seat, ...],
         decision_respond_to: int | None,
     ) -> str:
+        # 交锋阶段连续几句都在互相补充、没人反对时，要求这一轮给个具体反例。
+        # 不加这条，实测会出现"交锋"阶段 18 句全是「补充」的场面：
+        # 每个人都往方案上加条款，读起来像在开评审会，不是圆桌。
+        recent = [t.intent for t in turns[-3:]]
+        needs_push = (
+            phase == "CLASH"
+            and len(recent) == 3
+            and not ({"反驳", "追问"} & set(recent))
+        )
+        text = self._generate(
+            speaker=speaker,
+            phase=phase,
+            topic=topic,
+            turns=turns,
+            seats=seats,
+            respond_to=decision_respond_to,
+            push_back=needs_push,
+        )
+        # 复读检测：与场上任何一句几乎逐字相同就重说一次。
+        # 这条**不由模型自查**（它看不见自己的完整历史），而是由代码判：
+        # 实测同一专家把「代码是你合的，锅就是你的」隔十四句又说了一遍。
+        repeated = is_repeat(text, [t.text for t in turns])
+        # 长度同样是代码管，不是 prompt 管。prompt 里写着「不超过 60 字」，
+        # 实测 7 场 168 句里有 47 句超了（28%），最长 82 字 ——
+        # 模型对"字数"这种量化约束基本不当回事，只能事后量、量到了让重说。
+        # 主持人的开场与收尾不在此列：收尾本来就要 4-6 句。
+        too_long = phase not in ("OPENING", "CLOSING") and len(text) > MAX_SPEECH_CHARS
+        if too_long:
+            log.info("%s 这句 %d 字，超过 %d 字上限，重说一次", speaker.name, len(text), MAX_SPEECH_CHARS)
+
+        if repeated or too_long:
+            if repeated:
+                common, seq = most_similar(text, turns)
+                log.info(
+                    "检测到复读：%s 这句与第%s句连续 %d 字相同，重说一次",
+                    speaker.name,
+                    seq,
+                    common,
+                )
+            retried = self._generate(
+                speaker=speaker,
+                phase=phase,
+                topic=topic,
+                turns=turns,
+                seats=seats,
+                respond_to=decision_respond_to,
+                avoid_repeat=repeated,
+                too_long=too_long,
+                push_back=needs_push,
+            )
+            # 重说之后仍然撞车就保留新的那句：宁可内容一般，
+            # 也不要让这一轮空着 —— 空轮会让轮次与实际发言数对不上。
+            text = retried or text
+        return text
+
+    def _generate(
+        self,
+        *,
+        speaker: Seat,
+        phase: str,
+        topic: str,
+        turns: list[Turn],
+        seats: tuple[Seat, ...],
+        respond_to: int | None,
+        avoid_repeat: bool = False,
+        too_long: bool = False,
+        push_back: bool = False,
+    ) -> str:
         if phase in ("OPENING", "CLOSING"):
             prompt = build_host_prompt(
-                speaker, topic=topic, transcript=turns, phase=phase, seats=seats
+                speaker,
+                topic=topic,
+                transcript=turns,
+                phase=phase,
+                seats=seats,
+                avoid_repeat=avoid_repeat,
             )
             temp = self.config.temperature_host
         else:
@@ -385,7 +474,10 @@ class Engine:
                 topic=topic,
                 transcript=turns,
                 seats=seats,
-                respond_to_seq=decision_respond_to,
+                respond_to_seq=respond_to,
+                avoid_repeat=avoid_repeat,
+                too_long=too_long,
+                push_back=push_back,
             )
             temp = self.config.temperature_expert
 

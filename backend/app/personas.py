@@ -47,6 +47,20 @@ def _format_window(
     )
 
 
+def _own_window(
+    transcript: tuple[Turn, ...] | list[Turn],
+    self_id: str,
+    limit: int = 2,
+) -> list[Turn]:
+    """自己最近说过的几句。
+
+    窗口里 6 句有 5 句是别人的，模型对自己的上一句反而没有记忆 ——
+    实测出现过同一专家隔十句把同一句判断原样说第二遍。
+    """
+    mine = [t for t in transcript if t.speaker_id == self_id and t.text]
+    return mine[-limit:]
+
+
 def build_expert_prompt(
     seat: Seat,
     *,
@@ -55,6 +69,9 @@ def build_expert_prompt(
     seats: tuple[Seat, ...] | list[Seat],
     respond_to_seq: int | None = None,
     window: int = 6,
+    avoid_repeat: bool = False,
+    too_long: bool = False,
+    push_back: bool = False,
 ) -> str:
     focus = "、".join(seat.focus) if seat.focus else "（未设定）"
     parts = [
@@ -82,12 +99,46 @@ def build_expert_prompt(
                 "",
             ]
 
+    own = _own_window(transcript, seat.id)
+    if own:
+        parts += [
+            "【你刚才说过的】这几句已经说过了，不要换个说法再讲一遍：",
+            "\n".join(f"第{t.seq}句 你：{t.text}" for t in own),
+            "",
+        ]
+
     parts += [
         "【硬性规则】",
         _RULES_COMMON
         + "4. 不要复述或概括别人刚说过的话，直接给你的判断。\n"
-        + "5. 不要因为别人反对就改口。你可以被说服，但要给出理由。",
+        + "5. 不要因为别人反对就改口。你可以被说服，但要给出理由。\n"
+        + "6. 不要重复你自己已经说过的判断，每一轮都要往前推进一个\n"
+        + "   新的细节、具体场景或数字。\n"
+        + "7. 不要借用别人刚用过的关键词和比喻，用你所在领域里的词说同一件事。\n"
+        + "8. 不要每轮都走「先肯定对方、再转折」这条路，更不要开头就写「我认」。\n"
+        + "   直接给判断，理由放在后面。",
     ]
+    if avoid_repeat:
+        parts += [
+            "",
+            "【重复预警】你上一句与场上已有发言几乎一样。换一个具体案例、数字或场景重说，"
+            "换掉原来的措辞，不要只改开头两个字。",
+        ]
+    if too_long:
+        # 实测：写了「不超过 60 字」，7 场 168 句里仍有 47 句越界，最长 82 字。
+        # 模型不会数数，所以得用代码量、量到了再让它按这个提示重说。
+        parts += [
+            "",
+            "【太长了】你上一版超过了 60 字上限。压到 55 字以内：只留最有力的那一句，"
+            "砍掉铺垫、举例的细节和重复的解释。短一点比说全更重要。",
+        ]
+    if push_back:
+        parts += [
+            "",
+            "【这一轮的要求】场上已经连着几句都在互相补充、没人反对了。"
+            "你必须指出一个具体的反例或代价：按刚才那个做法，在什么情况下会失效、"
+            "谁会因此受损，说一件具体的事。",
+        ]
     return "\n".join(parts)
 
 
@@ -99,6 +150,7 @@ def build_host_prompt(
     phase: str,
     seats: tuple[Seat, ...] | list[Seat] | None = None,
     window: int = 8,
+    avoid_repeat: bool = False,
 ) -> str:
     lineup = seats if seats is not None else (seat,)
     phase_text = {
@@ -137,6 +189,13 @@ def build_host_prompt(
         _RULES_COMMON
         + "4. 你总结的内容必须与给定的共识/分歧清单一致，不得新增判断。",
     ]
+    # 主持人也会复读：实测收尾时把开场那句原样搬回来。这条对两个角色一视同仁
+    if avoid_repeat:
+        parts += [
+            "",
+            "【重复预警】你这句话与场上已有发言几乎一样。换一个具体案例、数字或场景重说，"
+            "换掉原来的措辞，不要只改开头两个字。",
+        ]
     return "\n".join(parts)
 
 

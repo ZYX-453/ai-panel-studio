@@ -77,20 +77,45 @@ def should_close(
     turn_count: int,
     max_turns: int,
     consensus: Consensus,
-    zero_dispute_streak: int,
+    settled_streak: int,
 ) -> tuple[bool, str]:
     """是否该收尾。返回 (是否, 原因)。
 
     两个条件都会触发收尾，但 ended_reason 不同 —— 这个区别必须保留：
     「谈完了」和「时间到了」对读的人是完全不同的两件事。
+
+    `settled_streak` 的含义在 11-20 被放宽过，原因值得留在这里：
+    D1 原本要求"连续两版**零**分歧"。但跑 13 场没有一场走到 ——
+    查下来发现专家 prompt 明确写着「不要因为别人反对就改口」，
+    只要专家守立场，最后那条核心分歧就一定还在，零分歧永远不可能出现。
+    两条规则互斥，改不了 prompt 就只能改判据。
+
+    所以现在判的是"分歧已经收窄到 1 条以内，且连续两版没有增加"：
+    - 收窄到 1 条：多轮之后还悬着的只剩那个核心命题本身；
+    - 不增加：没有再长出新的分歧。
+    这是**放宽**，不是修复：它承认"还有一条没谈拢"也可以收尾，
+    只要讨论确实已经聚焦。真正谈拢了（0 条）当然也满足。
     """
     if turn_count >= max_turns - 1:
         return True, "max_turns"
     if turn_count < CONVERGE_MIN_TURNS:
         return False, ""
-    # 连续两版都没有遗留分歧，且已经有实质产出，才算真的收敛
+
+    # 收敛不能让讨论跳过交锋阶段。
+    # 放宽判据后实测出现过一场：10 句就 converged，阶段是
+    # OPENING → EXPLORE → CLOSING，前端时间线上整段 CLASH 不见了 ——
+    # 读起来就是"两人刚摆完立场，主持人就宣布谈拢了"。
+    # 需求要求四个阶段都出现，所以必须已经走进 CLASH 才允许提前收尾。
+    if phase_for(turn_count, max_turns) == "EXPLORE":
+        return False, ""
+
+    # 连续两版都已经收口，且已经有实质产出，才算真的收敛。
+    # 分歧条数直接从 consensus 读，不靠调用方维护的计数器 ——
+    # settled_streak 只回答"有没有连续两版不增加"，"现在剩几条"由数据本身回答，
+    # 两件事分开，才不会出现"计数器说收口了、consensus 里还躺着 5 条"的错位。
     if (
-        zero_dispute_streak >= 2
+        settled_streak >= 2
+        and len(consensus.disputes) <= 1
         and consensus.version >= 2
         and len(consensus.points) >= 3
     ):
@@ -246,7 +271,7 @@ class Engine:
 
         turns: list[Turn] = []
         consensus = Consensus(version=0)
-        zero_streak = 0
+        settled_streak = 0
         consecutive_failures = 0
         # 初值刻意留空而不是 "OPENING"：留空才会在第一轮发出 phase=OPENING 事件。
         # 若初值就是 OPENING，比较结果为"没变化"，前端拿到的第一个 phase 事件
@@ -358,19 +383,21 @@ class Engine:
                             "based_on_seq": consensus.based_on_seq,
                         },
                     )
-                    if len(consensus.disputes) == 0 and prev_disputes == 0:
-                        zero_streak += 1
-                    elif len(consensus.disputes) == 0:
-                        zero_streak = 1
+                    # 「已经收口」= 分歧只剩 1 条以内，且这一版没有比上一版更多。
+                    # 注意 prev_disputes 在首次抽取时是 0，而这一版至少 1 条，
+                    # 所以第一版不会误判成收口（1 <= 0 为假），这是故意的。
+                    n_disputes = len(consensus.disputes)
+                    if n_disputes <= 1 and n_disputes <= prev_disputes:
+                        settled_streak += 1
                     else:
-                        zero_streak = 0
+                        settled_streak = 0
 
             # ---- 收尾判定
             close, reason = should_close(
                 turn_count=len(turns),
                 max_turns=max_turns,
                 consensus=consensus,
-                zero_dispute_streak=zero_streak,
+                settled_streak=settled_streak,
             )
             if close and phase != "CLOSING":
                 phase = "CLOSING"

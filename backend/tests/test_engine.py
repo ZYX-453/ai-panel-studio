@@ -109,27 +109,73 @@ def test_phase_for_always_ends_with_closing() -> None:
 def test_should_close_respects_min_turns() -> None:
     """轮数太早就宣布收敛会显得敷衍，所以有下限。"""
     c = Consensus(version=3, points=("a", "b", "c"), disputes=(), based_on_seq=5)
-    ok, _ = should_close(turn_count=5, max_turns=24, consensus=c, zero_dispute_streak=2)
+    ok, _ = should_close(turn_count=5, max_turns=24, consensus=c, settled_streak=2)
     assert not ok
 
 
 def test_should_close_distinguishes_converged_from_max_turns() -> None:
     """两种收尾必须给出不同原因：谈完了 ≠ 时间到了。"""
     c = Consensus(version=3, points=("a", "b", "c"), disputes=(), based_on_seq=12)
-    ok, reason = should_close(turn_count=12, max_turns=24, consensus=c, zero_dispute_streak=2)
+    ok, reason = should_close(turn_count=12, max_turns=24, consensus=c, settled_streak=2)
     assert (ok, reason) == (True, "converged")
 
     ok2, reason2 = should_close(
-        turn_count=23, max_turns=24, consensus=c, zero_dispute_streak=0
+        turn_count=23, max_turns=24, consensus=c, settled_streak=0
     )
     assert (ok2, reason2) == (True, "max_turns")
 
 
-def test_should_close_needs_two_clean_versions() -> None:
-    """只有一版没分歧就收尾太急：可能是这一轮没人提，而不是真的谈拢了。"""
+def test_should_close_needs_two_settled_versions() -> None:
+    """只有一版收口就收尾太急：可能是这一轮没人提，而不是真的谈拢了。"""
     c = Consensus(version=3, points=("a", "b", "c"), disputes=(), based_on_seq=12)
-    ok, _ = should_close(turn_count=12, max_turns=24, consensus=c, zero_dispute_streak=1)
+    ok, _ = should_close(turn_count=12, max_turns=24, consensus=c, settled_streak=1)
     assert not ok
+
+
+def test_last_one_dispute_still_allows_converged() -> None:
+    """11-20 放宽：悬着 1 条核心分歧也可以收尾。
+
+    原判据要求"零分歧"，但专家 prompt 明确写着「不要因为别人反对就改口」，
+    两条互斥，13 场没有一场走到。现在承认"只剩那个核心命题没谈拢"也算收尾。
+    这是放宽而不是修复，所以必须有一条用例把"放宽了什么"钉住 ——
+    否则以后有人把判据改回零分歧，不会有任何东西报红。
+    """
+    c = Consensus(
+        version=5,
+        points=("a", "b", "c"),
+        disputes=("周报是否必要：一方认为书面留痕，一方认为看板足够",),
+        based_on_seq=18,
+    )
+    ok, reason = should_close(turn_count=20, max_turns=24, consensus=c, settled_streak=2)
+    assert (ok, reason) == (True, "converged")
+
+
+def test_too_many_disputes_blocks_converged() -> None:
+    """但分歧还有两条以上时不能收尾 —— 那说明还没聚焦。"""
+    c = Consensus(
+        version=5,
+        points=("a", "b", "c"),
+        disputes=("D1", "D2"),
+        based_on_seq=18,
+    )
+    ok, _ = should_close(turn_count=20, max_turns=24, consensus=c, settled_streak=2)
+    assert not ok
+
+
+def test_converged_requires_having_reached_clash() -> None:
+    """不能跳过交锋阶段就收尾。
+
+    放宽判据后真跑出过一场：10 句 converged，阶段是
+    OPENING → EXPLORE → CLOSING，前端时间线上整段 CLASH 消失，
+    读起来像"刚摆完立场就宣布谈拢"。24 轮里 EXPLORE 到第 10 句
+    （ceil(24*0.4)），所以第 10 句不该收、第 11 句才可以。
+    """
+    c = Consensus(version=5, points=("a", "b", "c"), disputes=("唯一那条",), based_on_seq=9)
+    ok, _ = should_close(turn_count=10, max_turns=24, consensus=c, settled_streak=3)
+    assert not ok, "还在 EXPLORE 就收尾，会缺掉 CLASH 阶段"
+
+    ok2, reason2 = should_close(turn_count=11, max_turns=24, consensus=c, settled_streak=3)
+    assert (ok2, reason2) == (True, "converged")
 
 
 def test_extract_mentions_only_full_names() -> None:

@@ -208,7 +208,6 @@ SSE 一共七种事件，前端只认这七种：
 
 提交方式是邮件：`xulei@wisquest.com`，主题含 zip 包 + 文档 + GitHub/Gitee 邀请，截止为收到后 72 小时。
 
-> 说明：作业原文**未要求**录制演示视频。本仓库不声称有、也不列为未完成项。
 > 界面证据由 `docs/screenshots/` 六张截图与 `scripts/e2e_run.py` 的真实跑测记录承担。
 
 打包命令：

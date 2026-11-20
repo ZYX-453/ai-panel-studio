@@ -568,6 +568,13 @@ button { font: inherit; color: inherit; }
 .say-head { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; }
 .say-name { font-weight: 700; color: var(--seat); font-size: var(--f-md); }
 .say-title { font-size: var(--f-xs); color: var(--muted); }
+/* 靠右贴齐：一屏十几句时，竖向扫时间比横向找更省力 */
+.say-time {
+  margin-left: auto;
+  font-size: var(--f-xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 .say-intent {
   font-size: var(--f-xs);
   color: var(--text-2);
@@ -713,6 +720,31 @@ button { font: inherit; color: inherit; }
   padding: var(--s5);
 }
 .notfound p { color: var(--muted); }
+
+/* -------------------------------------------------------- 请求态与链路态 */
+
+/* 错误条常驻在表单上方：不弹 toast，弹窗会被下一次渲染冲掉，
+   而"后端没起"这种错需要一直看得见 */
+.lobby-error {
+  margin: var(--s3) 0 0;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--danger-weak);
+  border: 1px solid #f3c9c9;
+  color: var(--danger);
+  font-size: var(--f-sm);
+}
+
+/* SSE 断线提示：加在中括号里太窄，单独占一段文字 */
+.studio-link-down {
+  color: var(--warn);
+  font-size: var(--f-xs);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--warn-weak);
+}
+
+.notfound .loading { color: var(--muted); font-size: var(--f-sm); }
 
 /* ================================================================ 窄屏 */
 

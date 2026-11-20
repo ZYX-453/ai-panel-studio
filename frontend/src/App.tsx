@@ -1,93 +1,139 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Lobby } from './pages/Lobby'
 import { Confirm } from './pages/Confirm'
 import { Studio } from './pages/Studio'
-import { buildMockPanel, mockDetails, mockList } from './mock/data'
 import { navigate, useRoute } from './lib/router'
-import { emptyConsensus, type DiscussionDetail, type DiscussionSummary } from './lib/types'
+import {
+  createDiscussion,
+  describeError,
+  getDiscussion,
+  listDiscussions,
+  regeneratePanel,
+  startDiscussion,
+} from './lib/api'
+import type { DiscussionDetail, DiscussionSummary } from './lib/types'
 
-function nowLabel(): string {
-  const d = new Date()
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
-}
-
+/**
+ * 路由壳。
+ *
+ * 这里只做「取数 + 把变更写回状态」，不渲染任何业务区块 ——
+ * 三个页面各自负责自己的呈现。所有请求都走 lib/api，组件里没有一处 fetch。
+ */
 export function App() {
   const route = useRoute()
-  const [list, setList] = useState<DiscussionSummary[]>(mockList)
-  const [details, setDetails] = useState<Record<string, DiscussionDetail>>(mockDetails)
-  const [newSeq, setNewSeq] = useState(1)
-  const [regenerateAt, setRegenerateAt] = useState<Record<string, number>>({})
+  const routeId = route.name === 'discussion' ? route.id : null
 
-  const detail = route.name === 'discussion' ? details[route.id] : undefined
+  const [list, setList] = useState<DiscussionSummary[]>([])
+  const [listError, setListError] = useState<string | null>(null)
+  const [detail, setDetail] = useState<DiscussionDetail | null>(null)
+  const [detailError, setDetailError] = useState<string | null>(null)
+  const [loadingDetail, setLoadingDetail] = useState(false)
+  const [pending, setPending] = useState<string | null>(null)
 
-  const notice = useMemo(() => {
-    if (!detail) return null
-    if (detail.status === 'LIVE' && detail.transcript.length === 0) {
-      return '设计预览：尚未接入后端引擎，这一场不会有新事件。真实推进由后端 SSE 驱动。'
+  const refreshList = useCallback(async () => {
+    try {
+      setList(await listDiscussions())
+      setListError(null)
+    } catch (err) {
+      setListError(describeError(err))
     }
-    return null
-  }, [detail])
+  }, [])
 
-  function create(topic: string, expertCount: number) {
-    const id = `d_n${newSeq}`
-    setNewSeq((n) => n + 1)
-    const panel = buildMockPanel(id, expertCount)
-    const summary: DiscussionSummary = {
-      id,
-      topic,
-      status: 'AWAITING_CONFIRM',
-      endedReason: null,
-      turnCount: 0,
-      expertCount,
-      utteranceCount: 0,
-      consensusVersion: 0,
-      createdAt: nowLabel(),
+  useEffect(() => {
+    void refreshList()
+  }, [refreshList])
+
+  // 换讨论就重新取快照。alive 守卫防的是"点了 A 又马上点 B，A 的响应后到"
+  useEffect(() => {
+    if (!routeId) {
+      setDetail(null)
+      setDetailError(null)
+      return
     }
-    const full: DiscussionDetail = {
-      ...summary,
-      panel,
-      transcript: [],
-      consensus: emptyConsensus,
-      finalSummary: null,
-      maxTurns: 24,
+    let alive = true
+    setLoadingDetail(true)
+    getDiscussion(routeId)
+      .then((d) => {
+        if (!alive) return
+        setDetail(d)
+        setDetailError(null)
+      })
+      .catch((err) => {
+        if (!alive) return
+        setDetail(null)
+        setDetailError(describeError(err))
+      })
+      .finally(() => {
+        if (alive) setLoadingDetail(false)
+      })
+    return () => {
+      alive = false
     }
-    setList((prev) => [summary, ...prev])
-    setDetails((prev) => ({ ...prev, [id]: full }))
-    navigate({ name: 'discussion', id })
+  }, [routeId])
+
+  async function create(topic: string, expertCount: number) {
+    setPending('create')
+    try {
+      const d = await createDiscussion(topic, expertCount)
+      setDetail(d)
+      setDetailError(null)
+      navigate({ name: 'discussion', id: d.id })
+      void refreshList()
+    } catch (err) {
+      setListError(describeError(err))
+    } finally {
+      setPending(null)
+    }
   }
 
-  function start(id: string) {
-    setList((prev) => prev.map((d) => (d.id === id ? { ...d, status: 'LIVE' } : d)))
-    setDetails((prev) => {
-      const cur = prev[id]
-      if (!cur) return prev
-      return { ...prev, [id]: { ...cur, status: 'LIVE' } }
-    })
+  async function start(id: string) {
+    setPending('start')
+    try {
+      await startDiscussion(id)
+      setDetail((cur) => (cur ? { ...cur, status: 'LIVE' } : cur))
+      void refreshList()
+    } catch (err) {
+      setDetailError(describeError(err))
+    } finally {
+      setPending(null)
+    }
   }
 
-  function regenerate(id: string) {
-    const turn = (regenerateAt[id] ?? 0) + 1
-    setRegenerateAt((prev) => ({ ...prev, [id]: turn }))
-    setDetails((prev) => {
-      const cur = prev[id]
-      if (!cur) return prev
-      // 预览期只是把候选池换个起点，制造"换了一批人"的效果
-      const rotated = buildMockPanel(id, cur.expertCount).map((p, i) => ({ ...p, seat: i }))
-      const shift = turn % Math.max(1, rotated.length - 1)
-      const head = rotated[0]!
-      const rest = rotated.slice(1)
-      const mixed = [...rest.slice(shift), ...rest.slice(0, shift)]
-      return { ...prev, [id]: { ...cur, panel: [head, ...mixed.map((p, i) => ({ ...p, seat: i + 1 }))] } }
-    })
+  async function regenerate(id: string) {
+    setPending('regenerate')
+    try {
+      setDetail(await regeneratePanel(id))
+    } catch (err) {
+      setDetailError(describeError(err))
+    } finally {
+      setPending(null)
+    }
   }
+
+  /**
+   * 流里出现 ended 时把状态收口，列表页的角标才不会停在"直播中"。
+   *
+   * 这里要重新取一次快照：`final_summary` 与 `ended_reason` 是引擎在收尾时
+   * 才写库的，内存里的 detail 还停在开演那一刻。不重取，收尾段落永远是空的。
+   */
+  const onEnded = useCallback(async () => {
+    setDetail((cur) => (cur ? { ...cur, status: 'FINISHED' } : cur))
+    void refreshList()
+    if (!routeId) return
+    try {
+      const fresh = await getDiscussion(routeId)
+      setDetail((cur) => (cur && cur.id === fresh.id ? fresh : cur))
+    } catch {
+      // 快照取不到不影响已经播完的内容，界面维持现状
+    }
+  }, [refreshList, routeId])
 
   if (route.name === 'discussion') {
-    if (!detail) {
+    if (detailError) {
       return (
         <div className="notfound">
-          <h1>找不到这场讨论</h1>
-          <p>它可能已经被删除，也可能链接里的编号不对。</p>
+          <h1>这场讨论打不开</h1>
+          <p>{detailError}</p>
           <button className="btn btn-primary" onClick={() => navigate({ name: 'lobby' })}>
             回到列表
           </button>
@@ -95,18 +141,34 @@ export function App() {
       )
     }
 
-    if (detail.status === 'AWAITING_CONFIRM') {
+    if (!detail || (loadingDetail && detail.id !== routeId)) {
+      return (
+        <div className="notfound">
+          <p className="loading">正在读取讨论…</p>
+        </div>
+      )
+    }
+
+    if (detail.status === 'AWAITING_CONFIRM' || detail.status === 'GENERATING') {
       return (
         <Confirm
           detail={detail}
-          onStart={() => start(detail.id)}
-          onRegenerate={() => regenerate(detail.id)}
+          busy={pending}
+          onStart={() => void start(detail.id)}
+          onRegenerate={() => void regenerate(detail.id)}
         />
       )
     }
 
-    return <Studio detail={detail} notice={notice} />
+    return <Studio detail={detail} onEnded={onEnded} />
   }
 
-  return <Lobby discussions={list} onCreate={create} />
+  return (
+    <Lobby
+      discussions={list}
+      error={listError}
+      busy={pending === 'create'}
+      onCreate={(topic, count) => void create(topic, count)}
+    />
+  )
 }

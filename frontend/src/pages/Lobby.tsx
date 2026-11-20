@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { StatusBadge } from '../components/StatusBadge'
 import { navigate } from '../lib/router'
+import { formatStamp } from '../lib/format'
 import type { DiscussionSummary } from '../lib/types'
 
 type Filter = 'all' | 'live' | 'done'
@@ -13,9 +14,13 @@ const FILTERS: Array<{ key: Filter; label: string }> = [
 
 export function Lobby({
   discussions,
+  error,
+  busy,
   onCreate,
 }: {
   discussions: DiscussionSummary[]
+  error?: string | null
+  busy?: boolean
   onCreate: (topic: string, expertCount: number) => void
 }) {
   const [filter, setFilter] = useState<Filter>('all')
@@ -28,7 +33,7 @@ export function Lobby({
     return discussions
   }, [discussions, filter])
 
-  const canSubmit = topic.trim().length >= 2
+  const canSubmit = topic.trim().length >= 2 && !busy
 
   return (
     <div className="lobby">
@@ -38,6 +43,7 @@ export function Lobby({
           给一个议题，系统现场组一支虚拟专家局 —— 一位主持人加几位立场互不相同的专家，
           他们自己抢发言权，你负责围观。
         </p>
+        {error && <p className="lobby-error" role="alert">{error}</p>}
 
         <form
           className="newform"
@@ -86,7 +92,7 @@ export function Lobby({
             </div>
 
             <button className="btn btn-primary" type="submit" disabled={!canSubmit}>
-              生成阵容
+              {busy ? '正在组队…' : '生成阵容'}
             </button>
           </div>
         </form>
@@ -124,7 +130,7 @@ export function Lobby({
                       {d.expertCount} 位专家
                       {d.utteranceCount > 0 && <> · {d.utteranceCount} 条发言</>}
                       {d.consensusVersion > 0 && <> · 共识 v{d.consensusVersion}</>}
-                      <span className="drow-time"> · {d.createdAt}</span>
+                      <span className="drow-time"> · {formatStamp(d.createdAt)}</span>
                     </span>
                   </span>
                   <StatusBadge status={d.status} endedReason={d.endedReason} />

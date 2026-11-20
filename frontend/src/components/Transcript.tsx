@@ -16,6 +16,8 @@ interface TranscriptProps {
   waiting?: string | null
   /** 是否跟随最新发言自动滚到底；回看一场已结束的讨论时应为 false */
   follow?: boolean
+  /** 讨论是否已经结束 —— 空态的措辞要靠它区分「还没开始」和「一句都没有」 */
+  ended?: boolean
 }
 
 /**
@@ -27,7 +29,7 @@ interface TranscriptProps {
  * aria 用 role="log" + aria-relevant="additions"：
  * 只念新增的那一条，而不是每次状态变化把整屏重念一遍。
  */
-export function Transcript({ transcript, panel, waiting, follow = true }: TranscriptProps) {
+export function Transcript({ transcript, panel, waiting, follow = true, ended = false }: TranscriptProps) {
   const boxRef = useRef<HTMLDivElement>(null)
   const mountedLen = useRef(transcript.length)
 
@@ -56,7 +58,13 @@ export function Transcript({ transcript, panel, waiting, follow = true }: Transc
   return (
     <div className="tr" ref={boxRef} role="log" aria-live="polite" aria-relevant="additions">
       {transcript.length === 0 && (
-        <p className="tr-empty">讨论还没开始，第一条发言出现后这里会实时滚入。</p>
+        <p className="tr-empty">
+          {/* 降级收尾的场次是「已结束且一句都没有」，写「还没开始」会自相矛盾：
+              顶部状态条同一屏写着「已结束 · 模型异常，降级收尾」 */}
+          {ended
+            ? '本场没有产生任何发言，原因见下方收尾说明。'
+            : '讨论还没开始，第一条发言出现后这里会实时滚入。'}
+        </p>
       )}
 
       {transcript.map((u) => {

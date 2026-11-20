@@ -7,6 +7,8 @@ interface ExpertWindowProps {
   /** 公开关注点摘要 —— 是给人看的一句话，不是隐藏思维链 */
   focus?: string
   utterances: number
+  /** 讨论已结束 —— 「待机」等的是下一轮，已经散场了就不该再等 */
+  ended?: boolean
 }
 
 const STATE_TONE: Record<PanelistState, string> = {
@@ -22,9 +24,14 @@ const STATE_TONE: Record<PanelistState, string> = {
  * 这是需求「不能前端做仿真」在组件层面的落点：把这个组件单独拿出来，
  * 不给事件它就一直不动，不会自己"演"。
  */
-export function ExpertWindow({ panelist, state, focus, utterances }: ExpertWindowProps) {
+export function ExpertWindow({ panelist, state, focus, utterances, ended = false }: ExpertWindowProps) {
+  // 「待机」的言下之意是"等下一轮"，讨论结束后它就是在等一个不会来的轮次。
+  // 降级场四个人齐刷刷挂着「待机 + 已发言 0 次」，和顶部的「已结束」互相打脸。
+  const tone = STATE_TONE[state]
+  const label = ended && state === '待机' ? '散场' : state
+
   return (
-    <article className={`xw xw-${STATE_TONE[state]}`} style={{ ['--seat' as string]: panelist.color }}>
+    <article className={`xw xw-${tone}`} style={{ ['--seat' as string]: panelist.color }}>
       <div className="xw-top">
         <Avatar name={panelist.name} color={panelist.color} size={34} speaking={state === '发言中'} />
         <div className="xw-id">
@@ -34,9 +41,9 @@ export function ExpertWindow({ panelist, state, focus, utterances }: ExpertWindo
           </div>
           <div className="xw-title" title={panelist.title}>{panelist.title}</div>
         </div>
-        <span className={`xw-state xw-state-${STATE_TONE[state]}`}>
+        <span className={`xw-state xw-state-${tone}`}>
           <span className="xw-dot" aria-hidden="true" />
-          {state}
+          {label}
         </span>
       </div>
 

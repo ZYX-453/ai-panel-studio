@@ -170,6 +170,7 @@ export function Studio({ detail, onEnded }: { detail: DiscussionDetail; onEnded:
                 panelist={p}
                 state={state.states[p.id] ?? IDLE}
                 utterances={counts.get(p.id) ?? 0}
+                ended={Boolean(state.ended)}
               />
             ))}
           </div>
@@ -180,7 +181,13 @@ export function Studio({ detail, onEnded }: { detail: DiscussionDetail; onEnded:
             <p className="studio-notice">正在回放已记录的事件流，不回放、不虚构任何未发生的内容。</p>
           )}
           {errors > 0 && (
-            <p className="studio-notice">有 {errors} 句生成失败，已跳过并继续推进，讨论没有被卡住。</p>
+            <p className="studio-notice">
+              {/* 同一屏上面还有状态条和收尾卡片。降级时说「继续推进、没被卡住」
+                  会和它们直接冲突 —— 这条提示必须跟着 endedReason 走 */}
+              {endedReason === 'degraded'
+                ? `有 ${errors} 句生成失败，连续失败已达上限，讨论就此降级收尾。`
+                : `有 ${errors} 句生成失败，已跳过并继续推进，讨论没有被卡住。`}
+            </p>
           )}
           {/* 直播才跟随最新一句；回看已结束的讨论时停在顶部，从头读 */}
           <Transcript
@@ -188,6 +195,7 @@ export function Studio({ detail, onEnded }: { detail: DiscussionDetail; onEnded:
             panel={detail.panel}
             waiting={waiting}
             follow={statusNow === 'LIVE'}
+            ended={Boolean(state.ended)}
           />
           {state.ended && detail.finalSummary && (
             <section className="final">
@@ -199,7 +207,7 @@ export function Studio({ detail, onEnded }: { detail: DiscussionDetail; onEnded:
 
         <aside className="pane pane-consensus" aria-label="共识与分歧">
           <div className="pane-scroll">
-            <ConsensusPanel consensus={state.consensus} />
+            <ConsensusPanel consensus={state.consensus} ended={Boolean(state.ended)} />
           </div>
         </aside>
       </div>

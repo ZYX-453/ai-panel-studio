@@ -9,7 +9,7 @@ import type { Consensus } from '../lib/types'
  * 2. 这里显示的一切都来自同一个 Consensus 对象（单一真相源），
  *    最终总结也从这个对象写，不允许另起一套判断。
  */
-export function ConsensusPanel({ consensus }: { consensus: Consensus }) {
+export function ConsensusPanel({ consensus, ended = false }: { consensus: Consensus; ended?: boolean }) {
   const hasAny = consensus.points.length > 0 || consensus.disputes.length > 0
 
   return (
@@ -27,9 +27,15 @@ export function ConsensusPanel({ consensus }: { consensus: Consensus }) {
 
       {!hasAny && (
         <p className="cp-empty">
-          讨论刚开始，暂时提炼不出共识或分歧。
-          <br />
-          累积 4 句发言后会首次更新，之后每 4 句刷新一次。
+          {ended ? (
+            '本场没有形成可记录的共识或分歧。'
+          ) : (
+            <>
+              讨论刚开始，暂时提炼不出共识或分歧。
+              <br />
+              累积 4 句发言后会首次更新，之后每 4 句刷新一次。
+            </>
+          )}
         </p>
       )}
 

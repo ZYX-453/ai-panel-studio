@@ -136,6 +136,12 @@ def main() -> int:
     ap.add_argument("--height", type=int, default=900)
     ap.add_argument("--timeout", type=float, default=30.0)
     ap.add_argument("--settle", type=float, default=0.4, help="目标出现后再等几秒（CSS 过渡）")
+    ap.add_argument("--eval-before", default="", help="截图前执行的一段 JS，可用来滚动、展开")
+    ap.add_argument(
+        "--min-nodes",
+        default="",
+        help="等某选择器的节点数达标再截，写法 '.say=24'（防止截到数据还没填完的中间态）",
+    )
     args = ap.parse_args()
 
     out = Path(args.out)
@@ -198,10 +204,33 @@ def main() -> int:
             else:
                 raise SystemExit(f"等待超时：页面上没有出现「{args.wait_text}」")
 
+        # 等节点数量到位。演播厅先渲染骨架、再由 SSE 一帧帧填发言，
+        # 只等"某个元素出现"会截到回放中途 —— 图上 6 条、库里 24 条。
+        if args.min_nodes:
+            selector, _, want = args.min_nodes.rpartition("=")
+            want_n = int(want)
+            while time.time() < deadline:
+                got = cdp.eval(
+                    "document.querySelectorAll(%s).length" % json.dumps(selector)
+                )
+                if isinstance(got, int) and got >= want_n:
+                    break
+                time.sleep(0.2)
+            else:
+                raise SystemExit(
+                    f"等待超时：{selector} 只到 {got} 个，期望 ≥ {want_n}"
+                )
+
         # 断言真的落在目标页上，防止截到上一次导航的残帧
         href = cdp.eval("location.href")
         if args.url.split("#")[-1] and args.url.split("#")[-1] not in str(href):
             raise SystemExit(f"页面停在 {href}，不是目标 {args.url}")
+
+        # 截图前的可选操作：比如把发言区滚回顶部，让截图从第一句开始，
+        # 而不是停在"跟随最新一句"自动滚到的底部
+        if args.eval_before:
+            cdp.eval(args.eval_before)
+            time.sleep(0.3)
 
         time.sleep(args.settle)
         shot = cdp.send("Page.captureScreenshot", format="png", captureBeyondViewport=False)

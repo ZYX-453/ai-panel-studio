@@ -145,6 +145,26 @@ const EVENT_TYPES = [
 ] as const
 
 /**
+ * 业务类型 → 线上 event 名。
+ *
+ * `error` 是 EventSource 的保留事件名：连接断开时浏览器也派发 `error`。
+ * 业务里的 `error`（某一句生成失败）原样上线的话，两个语义会挤进同一个
+ * 监听器 —— 断线事件被当成"收到了业务事件"，空转重连的计数永远清不掉，
+ * 页面就会一直挂着「正在重连」。
+ *
+ * 后端 `SSE_EVENT_ALIAS` 把业务 error 上线成 `panel_error`，这里转回来。
+ * 只在传输层转义一次，组件看到的仍是 `error`。
+ */
+const WIRE_NAME: Record<(typeof EVENT_TYPES)[number], string> = {
+  phase: 'phase',
+  panelist_state: 'panelist_state',
+  utterance: 'utterance',
+  consensus: 'consensus',
+  ended: 'ended',
+  error: 'panel_error',
+}
+
+/**
  * 打开事件流。
  *
  * 用原生 EventSource 而不是手写 fetch 流：断线重连时浏览器会自动带上
@@ -166,6 +186,7 @@ export function openStream(
   const es = new EventSource(url)
 
   let closed = false
+  let opened = false
   let seenSinceOpen = false
   let idleReopens = 0
 
@@ -180,17 +201,25 @@ export function openStream(
     // 服务端正常收尾后连接会被关闭，EventSource 会无条件重连。
     // 若连续几次重连都没有新事件，说明这场讨论确实已经结束，主动收手，
     // 否则会每 2 秒空转一次，直到用户关掉页面。
-    if (!seenSinceOpen) idleReopens += 1
+    //
+    // 注意这里的判断对象是**上一轮**：`open` 必然在任何 message 之前触发，
+    // 所以此刻 `seenSinceOpen` 反映的是"上一次连接期间有没有收到事件"。
+    // 早期版本漏了 `opened`，于是首次连上就把它当成一次空闲重连，
+    // 界面从打开页面起一直挂着「连接中断，正在重连…」——
+    // 而后端访问日志里全程只有一次 /stream 请求，根本没重连过。
+    if (opened && !seenSinceOpen) idleReopens += 1
+    else idleReopens = 0
     seenSinceOpen = false
+    opened = true
     if (idleReopens > 3) {
       close()
       return
     }
-    handlers.onStatus?.(idleReopens > 0 ? 'reconnecting' : 'open')
+    handlers.onStatus?.('open')
   })
 
   for (const type of EVENT_TYPES) {
-    es.addEventListener(type, (ev) => {
+    es.addEventListener(WIRE_NAME[type], (ev) => {
       seenSinceOpen = true
       const message = ev as MessageEvent<string>
       let frame: RawFrame

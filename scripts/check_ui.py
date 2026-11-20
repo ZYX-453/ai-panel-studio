@@ -108,11 +108,70 @@ def console_errors(cdp: CDP) -> list[str]:
     return out
 
 
-def check_page(cdp: CDP, url: str, wait_sel: str, label: str, *, expect_no_scroll: bool) -> list[str]:
+def fill_gap(cdp: CDP) -> float | None:
+    """演播厅三栏底部离视口底部还有多少像素。
+
+    为什么单独量这个：`scrollHeight == clientHeight` 只能证明"不滚动"，
+    证明不了"撑满"。实测的缺陷是这样的 —— `.studio` 用 `grid-template-rows:
+    auto auto 1fr` 排三行，而桌面端 `.studio-tabs` 是 `display:none`，
+    它不参与布局，于是 `.studio-body` 落到第 2 行（auto）而非第 3 行（1fr）。
+    24 句时内容自己就把高度顶满了，看不出问题；降级收尾那种 0 句的场次，
+    三栏只长到 520px，下面 380px 整片留白。**门禁当时全绿。**
+    """
+    box = cdp.eval(
+        "(()=>{const b=document.querySelector('.studio-body');"
+        "if(!b) return null;const r=b.getBoundingClientRect();"
+        "return {bottom:r.bottom, ih:window.innerHeight, h:r.height};})()"
+    )
+    if not box:
+        return None
+    return float(box["ih"]) - float(box["bottom"])
+
+
+def check_fill(cdp: CDP, label: str) -> str | None:
+    """清空三栏内容后再量：布局不许跟着内容一起塌下去。
+
+    清空动作只是探针，跑完立刻恢复（同一个页面后续还要继续检查页签）。
+    """
+    restore = "document.querySelectorAll('.pane-scroll,.tr,.final,.studio-notice').forEach(e=>{e.style.display=e.dataset.disp||''})"
+    cdp.eval(
+        "document.querySelectorAll('.pane-scroll,.tr,.final,.studio-notice')"
+        ".forEach(e=>{e.dataset.disp=e.style.display||'';e.style.display='none'})"
+    )
+    try:
+        gap = fill_gap(cdp)
+    finally:
+        cdp.eval(restore)
+
+    if gap is None:
+        return f"[{label}] 找不到 .studio-body，无法判断三栏是否撑满"
+    if gap > 2:
+        return f"[{label}] 内容清空后三栏没撑满：底部空出 {gap:.0f}px（布局跟着内容塌了）"
+    return None
+
+
+def check_page(
+    cdp: CDP,
+    url: str,
+    wait_sel: str,
+    label: str,
+    *,
+    expect_no_scroll: bool,
+    require_fill: bool = False,
+) -> list[str]:
     problems: list[str] = []
     cdp.events.clear()
     goto(cdp, url, wait_sel)
     m = metrics(cdp)
+
+    if require_fill:
+        # 只量"当前这一场"是不够的：d_01 有 11 句，内容自己就把高度顶满了，
+        # 布局即使按内容长也看不出问题 —— 我第一版门禁就是这么写的，
+        # 把 CSS 改回 grid 缺陷版仍然全绿，等于没测。
+        # 真正该守的是「内容少时也必须撑满」，所以先清空三栏内容再造这个条件。
+        problem = check_fill(cdp, label)
+        if problem:
+            problems.append(problem)
 
     if m["sw"] > m["iw"] + 1:
         problems.append(f"[{label}] 横向溢出：scrollWidth={m['sw']} > innerWidth={m['iw']}")
@@ -167,6 +226,7 @@ def main() -> int:
                 ".say",
                 f"{width} 演播厅",
                 expect_no_scroll=True,
+                require_fill=True,
             )
 
             # 窄屏页签：三区必须能切换，且同一时刻只显示一个
@@ -201,7 +261,7 @@ def main() -> int:
         for p in problems:
             print(f"  ★ {p}")
         return 1
-    print("全部通过：无横向溢出、无整页滚动、无原始数据泄漏、控制台无报错")
+    print("全部通过：三栏撑满、无横向溢出、无整页滚动、无原始数据泄漏、控制台无报错")
     return 0
 
 

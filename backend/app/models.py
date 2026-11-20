@@ -21,6 +21,9 @@ class Seat:
     catchphrase: str = ""
     focus: tuple[str, ...] = ()
     attack: str = ""
+    #: 抢话倾向 0~1。同样是"性格"的一部分：有人一有缝就插话，有人得被问才开口。
+    #: 由人设生成阶段提供；留 None 时调度器按 id 派生一个稳定值（不是随机）。
+    eagerness: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

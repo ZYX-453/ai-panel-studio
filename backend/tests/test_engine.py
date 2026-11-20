@@ -37,13 +37,16 @@ class FakeLLM:
     """按 prompt 里的标记决定返回什么。不联网、可预测。"""
 
     def __init__(
-        self, *, fail_times: int = 0, converge_after: int = 2, dispute_count: int = 1
+        self, *, fail_times: int = 0, converge_after: int = 2, dispute_count: int = 1,
+        speech: str = "我不同意这个前提。先看数据再下判断，否则讨论会停在感受层面。",
     ) -> None:
         self.fail_times = fail_times
         self.converge_after = converge_after
         #: 每版留几条分歧。留 1 条时 settled_streak 会一路涨到收敛；
         #: 想让它跑满轮次就留 2 条以上（>1 直接不满足收口判据）
         self.dispute_count = dispute_count
+        #: 专家发言的固定返回。用来构造"重说之后仍然超长"这种情形
+        self.speech = speech
         self.calls = 0
         self.consensus_calls = 0
         #: 每次抽取时，prompt 里出现过的最大的「第 N 句」——
@@ -76,7 +79,7 @@ class FakeLLM:
             return ChatResult(content=body, usage=Usage(10, 20), latency_ms=5, model="fake")
 
         return ChatResult(
-            content="我不同意这个前提。先看数据再下判断，否则讨论会停在感受层面。",
+            content=self.speech,
             usage=Usage(10, 20),
             latency_ms=5,
             model="fake",
@@ -268,6 +271,36 @@ def test_consensus_covers_the_last_speech_before_closing(store: Store) -> None:
         f"最后一次抽取只覆盖到第 {last_reached} 句，"
         f"正文有 24 句 —— 最后几{24 - last_reached}句没进共识"
     )
+
+
+def test_overlong_speech_is_truncated_to_the_hard_limit(store: Store) -> None:
+    """常量写 65 字,就不能发出 66 字的句子。
+
+    这条不是假想的边界：实跑里真有一句 66 字（"有人会说日常沟通足够频繁…"）
+    溜过了 check_ui 的门禁。原因是重说之后只做了 `text = retried or text`，
+    没有再量一次长度 —— 于是"上限"只是期望，不是保证。
+    门禁卡 65、引擎放过任意长度，就是两套口径。
+    """
+    did = make_discussion(store, max_turns=12)
+    fake = FakeLLM(converge_after=99, dispute_count=2, speech="长" * 120)
+    engine = Engine(store, fake, EventBus(), config=EngineConfig(max_turns=12))
+    engine.run(did)
+
+    # 主持人不受这条约束：收尾本来就要 4-6 句，硬截会把结论截没
+    host_ids = {p.id for p in store.get_panel(did) if p.role == "host"}
+    utts = [
+        r["payload"]
+        for r in store.get_events(did)
+        if r["type"] == "utterance" and r["payload"]["panelist_id"] not in host_ids
+    ]
+    assert utts, "整场没有专家发言，测试没测到目标路径"
+
+    overlong = [u["content"] for u in utts if len(u["content"]) > MAX_SPEECH_CHARS]
+    assert not overlong, f"有 {len(overlong)} 句超过 {MAX_SPEECH_CHARS} 字：{overlong[0][:40]}"
+
+    # 截断要留下"被截断"的痕迹，读者才知道这句话没说完
+    truncated = [u["content"] for u in utts if u["content"].endswith("…")]
+    assert truncated, "截断过的句子应该以省略号结尾"
 
 
 def test_run_produces_ordered_events_and_finishes(store: Store) -> None:
@@ -476,36 +509,6 @@ class RepeatThenFreshLLM(FakeLLM):
         )
 
 
-def test_repeated_sentence_gets_regenerated(store: Store) -> None:
-    """复读由代码判、由代码要求重说 —— 模型看不见自己的完整历史。"""
-    did = make_discussion(store, max_turns=12)
-    llm = RepeatThenFreshLLM(converge_after=99)
-    Engine(store, llm, EventBus(), config=EngineConfig(max_turns=12)).run(did)
-
-    texts = [u["content"] for u in store.get_utterances(did)]
-    dup = [t for t in texts if t.startswith("代码是你合的")]
-    assert len(dup) == 1, f"同一句话被写进了 transcript {len(dup)} 次"
-    assert any("换个具体场景" in t for t in texts), "重说之后的新内容没有被采用"
-    assert any("【重复预警】" in p for p in llm.speaker_prompts), "第二轮没有带上重复预警"
-
-    # 重说不能吃掉这一轮：轮次数与实际发言行数仍要对得上
-    assert len(texts) == store.get_discussion(did)["turn_count"]
-
-
-def test_intent_comes_from_content_not_schedule(store: Store) -> None:
-    """意图必须由说出来的话决定。
-
-    调度器的 intent_hint 只知道「谁被点名」「谁连说了两句」，实测一场 22 句里
-    18 句都落到「补充」，而界面标着「交锋」—— 同屏两套口径。
-    """
-    did = make_discussion(store, max_turns=12)
-    Engine(store, FakeLLM(converge_after=99), EventBus(), config=EngineConfig(max_turns=12)).run(did)
-
-    intents = [u["intent"] for u in store.get_utterances(did)]
-    assert intents[0] == "开场"
-    # FakeLLM 每句都以「我不同意」开头 → 必须被判成反驳，而不是一律「补充」
-    assert intents.count("反驳") >= len(intents) - 2, intents
-
 
 def test_clash_phase_pushes_back_when_everyone_just_agrees(store: Store) -> None:
     """交锋阶段连着几句都在互相补充时，必须要求这一轮给个反例。
@@ -520,19 +523,6 @@ def test_clash_phase_pushes_back_when_everyone_just_agrees(store: Store) -> None
     joined = "\n".join(llm.speaker_prompts)
     assert "【这一轮的要求】" in joined, "整场都没有触发反例要求"
 
-
-def test_clash_phase_pushes_back_when_everyone_just_agrees(store: Store) -> None:
-    """交锋阶段连着几句都在互相补充时，必须要求这一轮给个反例。
-
-    实测的一场：CLASH 里 13 句全被判成「补充」，每个人都往方案上加条款，
-    读起来像评审会。判据是**内容**（前面几轮有没有反驳/追问），所以也由代码判。
-    """
-    did = make_discussion(store, max_turns=12)
-    llm = RepeatThenFreshLLM(converge_after=99)
-    Engine(store, llm, EventBus(), config=EngineConfig(max_turns=12)).run(did)
-
-    joined = "\n".join(llm.speaker_prompts)
-    assert "【这一轮的要求】" in joined, "整场都没有触发反例要求"
 
 
 class LongThenShortLLM(FakeLLM):
@@ -579,47 +569,3 @@ def test_overlong_speech_is_regenerated(store: Store) -> None:
     ]
     assert any("【太长了】" in p for p in llm.speaker_prompts), "没有触发过长重说"
 
-
-class LongThenShortLLM(FakeLLM):
-    """模拟"不听字数要求"的模型：不说它太长就一直写长句。"""
-
-    def __init__(self, **kw) -> None:
-        super().__init__(**kw)
-        self.speaker_prompts: list[str] = []
-
-    def chat(self, messages, *, temperature=0.9, max_tokens=800, json_mode=False):
-        if json_mode:
-            return super().chat(
-                messages, temperature=temperature, max_tokens=max_tokens, json_mode=True
-            )
-        prompt = messages[0]["content"]
-        self.speaker_prompts.append(prompt)
-        self.calls += 1
-        if "【太长了】" in prompt:
-            body = "短一句：这事在预算紧的时候第一个被砍。"
-        else:
-            # 70 字以上，必然越过上限
-            body = "我们上线那套流程之后每个团队都配了专门的人盯着，结果季度复盘时发现" \
-                   "真正干活的还是原来那几个人，多出来的人只在填表，所以我认为这套做法在" \
-                   "规模没到之前不该硬上。"
-        return ChatResult(content=body, usage=Usage(10, 20), latency_ms=5, model="fake")
-
-
-def test_overlong_speech_is_regenerated(store: Store) -> None:
-    """字数由代码量，不由 prompt 自觉。
-
-    prompt 里写着「不超过 60 字」，实测 7 场 168 句里有 47 句越界（最长 82 字），
-    模型对量化约束基本不当回事。这条钉住"超了就重说一次"确实发生。
-    """
-    did = make_discussion(store, max_turns=10)
-    llm = LongThenShortLLM(converge_after=99)
-    Engine(store, llm, EventBus(), config=EngineConfig(max_turns=10)).run(did)
-
-    texts = [u["content"] for u in store.get_utterances(did)]
-    # 开场/收尾来自主持人，本来就允许长；只看专家那几句
-    expert_texts = texts[1:-1]
-    assert expert_texts, "这一场没有专家发言，测试前提不成立"
-    assert all(len(t) <= MAX_SPEECH_CHARS for t in expert_texts), [
-        len(t) for t in expert_texts
-    ]
-    assert any("【太长了】" in p for p in llm.speaker_prompts), "没有触发过长重说"

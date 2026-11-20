@@ -18,6 +18,12 @@
 4. **控制台报错**：`console.error` / 未捕获异常
    演示时 F12 一片红是最难解释的。
 
+5. **发言长度**：`<p class="say-text">` 里每一句都不得超过 65 字
+   需求写的是"1-2 句、不超过 60 字"。引擎那一端是"代码量长度、超了让它重说"，
+   这一条负责证明它真的拦住了 —— 约束写进 prompt 不等于成立，得有人量。
+   阈值取 65 而不是 60：引擎故意留了 5 字余量（模型不数数），
+   门禁跟代码同口径，否则就是凭空造出第二套标准。
+
 用法（前后端都要先起来）::
 
     python scripts/check_ui.py --base http://127.0.0.1:5173 --did d_01
@@ -43,6 +49,14 @@ from shot import CDP, find_browser, free_port, pick_page  # noqa: E402
 WIDTHS = [(1440, 900), (1366, 768), (1280, 800), (1024, 768)]
 
 BAD_TEXT = ["{\"ok\"", "\"data\":", "undefined", "NaN", "[object Object]", "null%"]
+
+#: 单句发言的硬上限，必须与 `backend/app/engine.py` 的 `MAX_SPEECH_CHARS` 一致。
+#: prompt 里写的是 60，代码故意留了 5 字余量（模型不数数，卡死 60 会让几乎每句都触发
+#: 重说）。门禁只能跟代码同口径 —— 卡 60 就是凭空造出第二套标准，红得没有意义。
+MAX_SPEECH_CHARS = 65
+
+#: 软上限：超过就在报告里点名，但不判失败。用来暴露"贴着上限写"的趋势。
+SOFT_SPEECH_CHARS = 60
 
 
 def launch(width: int, height: int) -> tuple[subprocess.Popen, str, Path]:
@@ -150,6 +164,41 @@ def check_fill(cdp: CDP, label: str) -> str | None:
     return None
 
 
+def check_speech(cdp: CDP, label: str) -> list[str]:
+    """演播厅里每一句发言都不能超长。
+
+    这条门禁守的是"只说 1-2 句、不超过 60 字"在**界面上**真的成立。
+    引擎那一端是"代码量长度、超了让它重说"，门禁这一端负责证明它真的拦住了 ——
+    这跟布局那条是同一个教训：约束写进 prompt 不等于成立，得有人量。
+
+    之所以要放在界面上量而不是直接查库：用户看到的是 `<p class="say-text">`，
+    如果渲染层做了截断（或者反过来拼接了前缀），库里的长度就不代表屏幕上的长度。
+    """
+    texts = cdp.eval(
+        "(()=>[...document.querySelectorAll('.say-text')]"
+        "  .map(e => (e.textContent || '').trim()))()"
+    )
+    if not texts:
+        # 0 句的时候长度门禁恒真，等于没测。宁可报红也不要给假绿。
+        return [f"[{label}] 演播厅里 0 句发言，长度门禁无从判断"]
+
+    problems: list[str] = []
+    too_long = [t for t in texts if len(t) > MAX_SPEECH_CHARS]
+    if too_long:
+        worst = max(too_long, key=len)
+        problems.append(
+            f"[{label}] {len(too_long)}/{len(texts)} 句超过 {MAX_SPEECH_CHARS} 字，"
+            f"最长 {len(worst)} 字：「{worst[:40]}…」"
+        )
+    near = [t for t in texts if SOFT_SPEECH_CHARS < len(t) <= MAX_SPEECH_CHARS]
+    if near:
+        print(
+            f"  · [{label}] {len(near)} 句落在 {SOFT_SPEECH_CHARS+1}-{MAX_SPEECH_CHARS} 字"
+            f"（未越界，但已顶到上限）：最长 {max(len(t) for t in near)} 字"
+        )
+    return problems
+
+
 def check_page(
     cdp: CDP,
     url: str,
@@ -158,11 +207,18 @@ def check_page(
     *,
     expect_no_scroll: bool,
     require_fill: bool = False,
+    check_speech_len: bool = False,
 ) -> list[str]:
     problems: list[str] = []
     cdp.events.clear()
     goto(cdp, url, wait_sel)
     m = metrics(cdp)
+
+    # 长度检查必须在 check_fill 之前：后者会清空三栏内容来造"内容少"的条件，
+    # 清完就一句发言都不剩了。
+    if check_speech_len:
+        problems += check_speech(cdp, label)
+        m = metrics(cdp)
 
     if require_fill:
         # 只量"当前这一场"是不够的：d_01 有 11 句，内容自己就把高度顶满了，
@@ -227,6 +283,7 @@ def main() -> int:
                 f"{width} 演播厅",
                 expect_no_scroll=True,
                 require_fill=True,
+                check_speech_len=True,
             )
 
             # 窄屏页签：三区必须能切换，且同一时刻只显示一个
@@ -261,7 +318,7 @@ def main() -> int:
         for p in problems:
             print(f"  ★ {p}")
         return 1
-    print("全部通过：三栏撑满、无横向溢出、无整页滚动、无原始数据泄漏、控制台无报错")
+    print("全部通过：三栏撑满、无横向溢出、无整页滚动、无原始数据泄漏、发言不超长、控制台无报错")
     return 0
 
 

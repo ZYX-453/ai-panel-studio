@@ -143,3 +143,91 @@ def test_list_marks_status(client: TestClient) -> None:
     rows = client.get("/api/discussions").json()["data"]
     assert rows and rows[0]["status"] in ("AWAITING_CONFIRM", "LIVE", "FINISHED")
     assert "expert_count" in rows[0]
+
+
+def test_two_discussions_do_not_collide_on_panelist_id(client: TestClient) -> None:
+    """同一个库里建第二场，不许撞 panelist 主键。
+
+    真实踩到的：`build_from_pool` 给的 id 是 "p0"/"p1"（本场第几号座），
+    而 `panelist.id` 是全局主键。第一场建完、第一场 24 轮跑完，再建第二场
+    就 `UNIQUE constraint failed: panelist.id` → 接口 500。
+    单场用例永远碰不到，必须连着建两场才能钉住。
+    """
+    first = client.post("/api/discussions", json={"topic": "要不要推行四天工作制", "expert_count": 3})
+    assert first.status_code == 201, first.text
+    second = client.post("/api/discussions", json={"topic": "该不该给新人配完整仓库权限", "expert_count": 3})
+    assert second.status_code == 201, second.text
+
+    a = {p["id"] for p in first.json()["data"]["panel"]}
+    b = {p["id"] for p in second.json()["data"]["panel"]}
+    assert len(a) == 4 and len(b) == 4
+    assert a & b == set(), f"两场阵容共用了 id：{a & b}"
+
+
+def test_regenerate_keeps_panel_ids_inside_discussion(client: TestClient) -> None:
+    """重掷阵容同样要绑场次，且不能把别的场的座位 id 撞掉。"""
+    other = client.post("/api/discussions", json={"topic": "先占住一套模板阵容", "expert_count": 4})
+    assert other.status_code == 201
+
+    did = client.post(
+        "/api/discussions", json={"topic": "重掷之后阵容应当换人", "expert_count": 4}
+    ).json()["data"]["id"]
+    r = client.post(f"/api/discussions/{did}/regenerate", json={"seed": 3})
+    assert r.status_code == 200, r.text
+    ids = [p["id"] for p in r.json()["data"]["panel"]]
+    assert all(i.startswith(f"{did}_") for i in ids), ids
+    assert len(set(ids)) == len(ids)
+
+
+# ------------------------------------------------------- SSE 事件名的转义
+
+
+def test_sse_frame_renames_business_error_event() -> None:
+    """业务 `error` 不能原样上线：`error` 是 EventSource 的保留事件名。
+
+    浏览器的 `EventSource` 在连接断开时派发的事件也叫 `error`。业务里的
+    `error`（某一句生成失败）如果同名上线，前端一个监听器同时收到两种东西，
+    分不清"连接断了"和"有句话没生成出来"。实测后果：断线判断被业务事件污染，
+    空转重连的计数永远清不到阈值，页面从打开起一直挂着「正在重连」。
+    """
+    from app.api import _sse_frame
+
+    frame = _sse_frame({"seq": 7, "type": "error", "payload": {"message": "一句失败"}})
+    assert "event: panel_error\n" in frame
+    assert "event: error\n" not in frame
+
+
+def test_sse_frame_leaves_other_types_alone() -> None:
+    """只给 error 开例外，别顺手把别的类型也改名 —— 前端按类型分发。"""
+    from app.api import _sse_frame
+
+    for t in ("phase", "panelist_state", "utterance", "consensus", "ended"):
+        frame = _sse_frame({"seq": 1, "type": t, "payload": {}})
+        assert f"event: {t}\n" in frame, t
+
+
+# ------------------------------------------------------- SSE 事件名的转义
+
+
+def test_sse_frame_renames_business_error_event() -> None:
+    """业务 `error` 不能原样上线：`error` 是 EventSource 的保留事件名。
+
+    浏览器的 `EventSource` 在连接断开时派发的事件也叫 `error`。业务里的
+    `error`（某一句生成失败）如果同名上线，前端一个监听器同时收到两种东西，
+    分不清"连接断了"和"有句话没生成出来"。实测后果：断线判断被业务事件污染，
+    空转重连的计数永远清不到阈值，页面从打开起一直挂着「正在重连」。
+    """
+    from app.api import _sse_frame
+
+    frame = _sse_frame({"seq": 7, "type": "error", "payload": {"message": "一句失败"}})
+    assert "event: panel_error\n" in frame
+    assert "event: error\n" not in frame
+
+
+def test_sse_frame_leaves_other_types_alone() -> None:
+    """只给 error 开例外，别顺手把别的类型也改名 —— 前端按类型分发。"""
+    from app.api import _sse_frame
+
+    for t in ("phase", "panelist_state", "utterance", "consensus", "ended"):
+        frame = _sse_frame({"seq": 1, "type": t, "payload": {}})
+        assert f"event: {t}\n" in frame, t

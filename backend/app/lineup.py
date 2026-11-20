@@ -36,13 +36,18 @@ HOST_TEMPLATE = {
     },
 }
 
-#: 六个互斥的切入角度。对任意议题都能自洽地给出一句具体立场，
-#: 且两两之间不会变成"同一个意思换个说法"。
+#: 六个互斥的切入角度。
+#:
+#: 立场**不拼接议题原文**：议题常常是「该不该……」「要不要……」这样的问句，
+#: 硬拼进「{议题}是可运营的」会读成病句（实测就是"公司该不该给员工配……
+#: 的完全访问权限是可运营的"）。所以这里写的是与议题无关的立场骨架，
+#: 议题本身由界面标题承载，读者自然会把两者连起来。
+#: 两两之间不会变成"同一个意思换个说法"，由 validate() 的相似度检查守住。
 ANGLES: tuple[dict[str, str], ...] = (
     {
         "name": "周敏",
         "title": "组织行为学教授",
-        "stance": "长期看，{topic}会削弱组织的隐性知识积累，短期收益不可持续",
+        "stance": "先别急着推进：它会削弱组织的隐性知识积累，短期收益不可持续",
         "catchphrase": "我做过一个追踪研究",
         "attack": "用个案代替普遍规律",
         "focus": "弱连接、非正式交流、隐性知识",
@@ -51,7 +56,7 @@ ANGLES: tuple[dict[str, str], ...] = (
     {
         "name": "许巍",
         "title": "SaaS 公司 CTO",
-        "stance": "{topic}是可运营的，问题在管理能力不在方向本身",
+        "stance": "可以推进：问题在管理能力，不在方式本身",
         "catchphrase": "在我们那儿是这么干的",
         "attack": "拿自己公司的规模套所有人",
         "focus": "执行细节、工具链、可度量性",
@@ -60,7 +65,7 @@ ANGLES: tuple[dict[str, str], ...] = (
     {
         "name": "林雪",
         "title": "HR 咨询顾问",
-        "stance": "{topic}不能一刀切，应按可适用性分层，一刀切两头都受损",
+        "stance": "不能一刀切：应按可适用性分层，否则两头都受损",
         "catchphrase": "先分个类",
         "attack": "把复杂问题拖进分类学",
         "focus": "分层标准、政策落地、组织公平",
@@ -69,7 +74,7 @@ ANGLES: tuple[dict[str, str], ...] = (
     {
         "name": "何远",
         "title": "创业公司创始人",
-        "stance": "{topic}对早期团队是奢侈品，规模没上去之前谈它是本末倒置",
+        "stance": "看阶段：对早期团队是奢侈品，规模没上去之前谈它是本末倒置",
         "catchphrase": "活下来最重要",
         "attack": "拿早期经验否定成熟期方法",
         "focus": "资源约束、阶段差异、现金流",
@@ -78,7 +83,7 @@ ANGLES: tuple[dict[str, str], ...] = (
     {
         "name": "程菲",
         "title": "一线运营主管",
-        "stance": "{topic}的决策成本不在决策者身上，所以落地时一定会变形",
+        "stance": "看落地：决策成本不在决策者身上，所以执行时一定会变形",
         "catchphrase": "你去现场待一周就明白了",
         "attack": "用执行层的困难否定方向",
         "focus": "执行成本、真实流程、一线反馈",
@@ -87,7 +92,7 @@ ANGLES: tuple[dict[str, str], ...] = (
     {
         "name": "赵启",
         "title": "组织经济学研究者",
-        "stance": "{topic}落不了地，根子在考核与激励没跟着改，光喊口号没用",
+        "stance": "看配套：根子在考核与激励没跟着改，光喊口号没用",
         "catchphrase": "看激励结构",
         "attack": "把所有问题都归因到制度",
         "focus": "激励机制、权责匹配、长期博弈",
@@ -135,7 +140,7 @@ def build_from_pool(topic: str, expert_count: int, seed: int = 0) -> list[dict[s
                 "seat": i,
                 "name": angle["name"],
                 "title": angle["title"],
-                "stance": angle["stance"].format(topic=topic),
+                "stance": angle["stance"],
                 "color": COLORS[i - 1],
                 "persona": {
                     "catchphrase": angle["catchphrase"],
@@ -146,6 +151,20 @@ def build_from_pool(topic: str, expert_count: int, seed: int = 0) -> list[dict[s
             }
         )
     return panel
+
+
+def bind_to_discussion(panel: list[dict[str, Any]], did: str) -> list[dict[str, Any]]:
+    """把阵容的局部 id 绑到讨论作用域上，返回新列表（不改入参）。
+
+    `build_from_pool` 给的 id 是 "p0" / "p1"，含义是"这一场里的第几号座"；
+    但 `panelist.id` 在库里是**全局主键**。于是同一套模板阵容被第二场讨论复用时，
+    第二个 INSERT 直接撞 `UNIQUE constraint failed: panelist.id` —— 表现为建讨论
+    接口 500，而单场测试永远发现不了（一个库只有一场时不可能撞）。
+
+    预置样例早就按 `p_01_0` 这样带场次命名了，运行期这条路一直没跟上。
+    统一在这里加前缀，两处调用点（新建 / 重掷）都必须过这一道。
+    """
+    return [{**p, "id": f"{did}_{p['id']}"} for p in panel]
 
 
 # --------------------------------------------------------------------- 校验

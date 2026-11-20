@@ -126,6 +126,8 @@ async def create_discussion(req: Request) -> JSONResponse:
         client, topic=topic, expert_count=expert_count, seed=0
     )
     did = f"d_{uuid.uuid4().hex[:8]}"
+    # 阵容自带的是"本场第几号座"，入库前必须绑到场次上（panelist.id 是全局主键）
+    panel = lineup_mod.bind_to_discussion(panel, did)
     store.create_discussion(
         did=did,
         topic=topic,
@@ -153,6 +155,8 @@ async def regenerate(did: str, req: Request) -> JSONResponse:
     panel, source = lineup_mod.generate(
         client, topic=d["topic"], expert_count=int(d["expert_count"]), seed=seed
     )
+    # 同 create：不绑场次就会与别场的 p0/p1 撞主键
+    panel = lineup_mod.bind_to_discussion(panel, did)
     store.replace_panel(did, panel)
     snap = store.snapshot(did)
     snap["lineup_source"] = source
@@ -200,11 +204,24 @@ def export_markdown(did: str) -> JSONResponse:
 # ----------------------------------------------------------------------- SSE
 
 
+#: 业务事件类型 → SSE 线上 event 名。
+#:
+#: 目前只有一条：`error` 是 EventSource 的**保留事件名**，浏览器在连接断开时
+#: 也会派发一个名为 `error` 的事件。业务里的 `error`（某一句生成失败）
+#: 如果原样上线，两个语义就挤在同一个监听器里 —— 前端分不清"连接断了"和
+#: "有一句没生成出来"，实测到的后果是断线判断被业务事件污染，
+#: 空转重连的计数永远清不到阈值，页面挂着「正在重连」直到讨论结束。
+#:
+#: 数据库里的事件类型仍然是 `error`（单一真相源不动），只在传输层转义。
+SSE_EVENT_ALIAS = {"error": "panel_error"}
+
+
 def _sse_frame(event: dict[str, Any]) -> str:
     """SSE 帧。id 直接用 seq —— 浏览器断线重连会自动带 Last-Event-ID，
     于是「直播」和「补发/回放」走的是同一条渲染管线。"""
     payload = json.dumps(event["payload"], ensure_ascii=False)
-    return f"id: {event['seq']}\nevent: {event['type']}\ndata: {payload}\n\n"
+    name = SSE_EVENT_ALIAS.get(event["type"], event["type"])
+    return f"id: {event['seq']}\nevent: {name}\ndata: {payload}\n\n"
 
 
 @app.get("/api/discussions/{did}/stream")

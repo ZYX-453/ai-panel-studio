@@ -1,0 +1,460 @@
+[
+ {
+  "seq": 1,
+  "type": "phase",
+  "payload": {
+   "phase": "OPENING"
+  }
+ },
+ {
+  "seq": 2,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_0",
+   "name": "陈立",
+   "state": "准备发言"
+  }
+ },
+ {
+  "seq": 3,
+  "type": "utterance",
+  "payload": {
+   "utterance_seq": 1,
+   "utterance_id": "u_01_01",
+   "panelist_id": "p_01_0",
+   "name": "陈立",
+   "title": "圆桌主持 · 商业评论人",
+   "content": "今天聊远程办公。先立个规矩：不谈个人偏好，只谈证据。周敏，你先说，远程对组织到底损伤了什么？",
+   "intent": "抛论点",
+   "reply_to_utterance_seq": null,
+   "phase": "OPENING",
+   "created_at": "2026-11-17T09:13:05"
+  }
+ },
+ {
+  "seq": 4,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_0",
+   "name": "陈立",
+   "state": "待机"
+  }
+ },
+ {
+  "seq": 5,
+  "type": "phase",
+  "payload": {
+   "phase": "EXPLORE"
+  }
+ },
+ {
+  "seq": 6,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_1",
+   "name": "周敏",
+   "state": "准备发言"
+  }
+ },
+ {
+  "seq": 7,
+  "type": "utterance",
+  "payload": {
+   "utterance_seq": 2,
+   "utterance_id": "u_01_02",
+   "panelist_id": "p_01_1",
+   "name": "周敏",
+   "title": "组织行为学教授",
+   "content": "弱连接。我做过一个三年的追踪研究，远程之后跨部门的非正式交流降了将近一半，而创新恰恰来自这些看起来没什么用的闲聊。",
+   "intent": "抛论点",
+   "reply_to_utterance_seq": 1,
+   "phase": "EXPLORE",
+   "created_at": "2026-11-17T09:13:32"
+  }
+ },
+ {
+  "seq": 8,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_1",
+   "name": "周敏",
+   "state": "待机"
+  }
+ },
+ {
+  "seq": 9,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_2",
+   "name": "许巍",
+   "state": "准备发言"
+  }
+ },
+ {
+  "seq": 10,
+  "type": "utterance",
+  "payload": {
+   "utterance_seq": 3,
+   "utterance_id": "u_01_03",
+   "panelist_id": "p_01_2",
+   "name": "许巍",
+   "title": "SaaS 公司 CTO",
+   "content": "我不同意弱连接这个说法。在我们那儿远程两年，跨部门连接反而变多了，因为不用约会议室、不用等谁有空。",
+   "intent": "反驳",
+   "reply_to_utterance_seq": 2,
+   "phase": "EXPLORE",
+   "created_at": "2026-11-17T09:14:01"
+  }
+ },
+ {
+  "seq": 11,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_2",
+   "name": "许巍",
+   "state": "待机"
+  }
+ },
+ {
+  "seq": 12,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_4",
+   "name": "何远",
+   "state": "准备发言"
+  }
+ },
+ {
+  "seq": 13,
+  "type": "utterance",
+  "payload": {
+   "utterance_seq": 4,
+   "utterance_id": "u_01_04",
+   "panelist_id": "p_01_4",
+   "name": "何远",
+   "title": "创业公司创始人",
+   "content": "你们说的都是已经跑起来的公司。活下来最重要的时候，我们二十个人靠的是每天坐在一起吵出来的默契，远程长不出这个东西。",
+   "intent": "补充",
+   "reply_to_utterance_seq": 3,
+   "phase": "EXPLORE",
+   "created_at": "2026-11-17T09:14:28"
+  }
+ },
+ {
+  "seq": 14,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_4",
+   "name": "何远",
+   "state": "待机"
+  }
+ },
+ {
+  "seq": 15,
+  "type": "consensus",
+  "payload": {
+   "version": 1,
+   "points": [
+    "远程对弱连接的损伤有实证支持"
+   ],
+   "disputes": [
+    "书面沟通能否替代非正式交流",
+    "是否应按岗位分层"
+   ],
+   "based_on_seq": 4
+  }
+ },
+ {
+  "seq": 16,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_3",
+   "name": "林雪",
+   "state": "准备发言"
+  }
+ },
+ {
+  "seq": 17,
+  "type": "utterance",
+  "payload": {
+   "utterance_seq": 5,
+   "utterance_id": "u_01_05",
+   "panelist_id": "p_01_3",
+   "name": "林雪",
+   "title": "HR 咨询顾问",
+   "content": "先分个类。岗位的可远程性差了三倍以上，把客服和算法工程师放进同一个政策里讨论，注定得不出结论。",
+   "intent": "抛论点",
+   "reply_to_utterance_seq": 4,
+   "phase": "EXPLORE",
+   "created_at": "2026-11-17T09:14:55"
+  }
+ },
+ {
+  "seq": 18,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_3",
+   "name": "林雪",
+   "state": "待机"
+  }
+ },
+ {
+  "seq": 19,
+  "type": "phase",
+  "payload": {
+   "phase": "CLASH"
+  }
+ },
+ {
+  "seq": 20,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_2",
+   "name": "许巍",
+   "state": "准备发言"
+  }
+ },
+ {
+  "seq": 21,
+  "type": "utterance",
+  "payload": {
+   "utterance_seq": 6,
+   "utterance_id": "u_01_06",
+   "panelist_id": "p_01_2",
+   "name": "许巍",
+   "title": "SaaS 公司 CTO",
+   "content": "而且弱连接这个指标本身可疑。非正式交流变少了，但书面沟通变多了，写下来的东西反而能留存。",
+   "intent": "反驳",
+   "reply_to_utterance_seq": 2,
+   "phase": "CLASH",
+   "created_at": "2026-11-17T09:15:40"
+  }
+ },
+ {
+  "seq": 22,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_2",
+   "name": "许巍",
+   "state": "待机"
+  }
+ },
+ {
+  "seq": 23,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_1",
+   "name": "周敏",
+   "state": "准备发言"
+  }
+ },
+ {
+  "seq": 24,
+  "type": "utterance",
+  "payload": {
+   "utterance_seq": 7,
+   "utterance_id": "u_01_07",
+   "panelist_id": "p_01_1",
+   "name": "周敏",
+   "title": "组织行为学教授",
+   "content": "留存不等于流通。文档能查到的东西，不会在你还没意识到需要它的时候撞到你脸上，这是两件不同的事。",
+   "intent": "反驳",
+   "reply_to_utterance_seq": 6,
+   "phase": "CLASH",
+   "created_at": "2026-11-17T09:16:12"
+  }
+ },
+ {
+  "seq": 25,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_1",
+   "name": "周敏",
+   "state": "待机"
+  }
+ },
+ {
+  "seq": 26,
+  "type": "consensus",
+  "payload": {
+   "version": 2,
+   "points": [
+    "远程对弱连接的损伤有实证支持",
+    "书面沟通可部分替代，但留存不等于流通"
+   ],
+   "disputes": [
+    "分层是否必须先测量",
+    "早期经验是否具有普适性"
+   ],
+   "based_on_seq": 7
+  }
+ },
+ {
+  "seq": 27,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_4",
+   "name": "何远",
+   "state": "准备发言"
+  }
+ },
+ {
+  "seq": 28,
+  "type": "utterance",
+  "payload": {
+   "utterance_seq": 8,
+   "utterance_id": "u_01_08",
+   "panelist_id": "p_01_4",
+   "name": "何远",
+   "title": "创业公司创始人",
+   "content": "这句我同意周敏。我们远程之后最明显的损失就是，没人会在茶水间顺口告诉你某个客户上周抱怨了什么。",
+   "intent": "补充",
+   "reply_to_utterance_seq": 7,
+   "phase": "CLASH",
+   "created_at": "2026-11-17T09:16:44"
+  }
+ },
+ {
+  "seq": 29,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_4",
+   "name": "何远",
+   "state": "待机"
+  }
+ },
+ {
+  "seq": 30,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_3",
+   "name": "林雪",
+   "state": "准备发言"
+  }
+ },
+ {
+  "seq": 31,
+  "type": "utterance",
+  "payload": {
+   "utterance_seq": 9,
+   "utterance_id": "u_01_09",
+   "panelist_id": "p_01_3",
+   "name": "林雪",
+   "title": "HR 咨询顾问",
+   "content": "何远你说的是阶段问题。二十人靠默契，两百人靠流程，把早期经验当成普遍规律会误导决策。",
+   "intent": "追问",
+   "reply_to_utterance_seq": 4,
+   "phase": "CLASH",
+   "created_at": "2026-11-17T09:17:15"
+  }
+ },
+ {
+  "seq": 32,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_3",
+   "name": "林雪",
+   "state": "待机"
+  }
+ },
+ {
+  "seq": 33,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_1",
+   "name": "周敏",
+   "state": "准备发言"
+  }
+ },
+ {
+  "seq": 34,
+  "type": "utterance",
+  "payload": {
+   "utterance_seq": 10,
+   "utterance_id": "u_01_10",
+   "panelist_id": "p_01_1",
+   "name": "周敏",
+   "title": "组织行为学教授",
+   "content": "分层我接受，但补一句：分层的前提是先量过。多数公司连自己哪些岗位真的可远程都没测过，就直接分层了。",
+   "intent": "补充",
+   "reply_to_utterance_seq": 9,
+   "phase": "CLASH",
+   "created_at": "2026-11-17T09:17:50"
+  }
+ },
+ {
+  "seq": 35,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_1",
+   "name": "周敏",
+   "state": "待机"
+  }
+ },
+ {
+  "seq": 36,
+  "type": "consensus",
+  "payload": {
+   "version": 3,
+   "points": [
+    "远程对弱连接的损伤有实证支持，不是主观感受",
+    "书面沟通可部分替代非正式交流，但不能替代偶然的信息碰撞",
+    "一刀切政策不成立，需按岗位可远程性分层"
+   ],
+   "disputes": [
+    "分层是否必须先测量，还是可以凭经验先分",
+    "早期公司的线下默契能否在规模化后被流程替代"
+   ],
+   "based_on_seq": 10
+  }
+ },
+ {
+  "seq": 37,
+  "type": "phase",
+  "payload": {
+   "phase": "CLOSING"
+  }
+ },
+ {
+  "seq": 38,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_0",
+   "name": "陈立",
+   "state": "准备发言"
+  }
+ },
+ {
+  "seq": 39,
+  "type": "utterance",
+  "payload": {
+   "utterance_seq": 11,
+   "utterance_id": "u_01_11",
+   "panelist_id": "p_01_0",
+   "name": "陈立",
+   "title": "圆桌主持 · 商业评论人",
+   "content": "收一下。今天没分出胜负，但有三件事清楚了：弱连接的损失是真的、书面沟通的替代作用也是真的、分层要先量再分。还差的，是同一家公司在两个阶段的前后对照数据。",
+   "intent": "总结",
+   "reply_to_utterance_seq": 10,
+   "phase": "CLOSING",
+   "created_at": "2026-11-17T09:19:40"
+  }
+ },
+ {
+  "seq": 40,
+  "type": "panelist_state",
+  "payload": {
+   "panelist_id": "p_01_0",
+   "name": "陈立",
+   "state": "待机"
+  }
+ },
+ {
+  "seq": 41,
+  "type": "ended",
+  "payload": {
+   "reason": "converged",
+   "turns": 11
+  }
+ }
+]

@@ -541,7 +541,7 @@ class Engine:
         reply_to_id: str | None,
     ) -> str:
         uid = f"u_{did}_{seq:03d}_{uuid.uuid4().hex[:6]}"
-        self.store.append_utterance(
+        created_at = self.store.append_utterance(
             did=did,
             uid=uid,
             panelist_id=speaker.id,
@@ -567,6 +567,7 @@ class Engine:
                 "intent": intent,
                 "reply_to_utterance_seq": self._seq_of_uid(did, reply_to_id),
                 "phase": phase,
+                "created_at": created_at,
             },
         )
         return uid

@@ -189,6 +189,7 @@ class Store:
                     "phase": u["phase"],
                     "intent": u["intent"],
                     "reply_to_seq": self._reply_seq(u),
+                    "created_at": u["created_at"],
                 }
                 for u in self.get_utterances(did)
             ],
@@ -299,20 +300,26 @@ class Store:
         intent: str,
         content: str,
         reply_to_id: str | None,
-    ) -> None:
-        """发言与它的事件必须一起落地，否则回放会出现"事件有、发言没有"。"""
+    ) -> str:
+        """发言与它的事件必须一起落地，否则回放会出现"事件有、发言没有"。
+
+        返回写入的时间戳：事件 payload 里要带同一个值，
+        让"库里的时间"和"界面上显示的时间"是同一个数。
+        """
         c = self.conn
+        ts = now_iso()
         with c:
             c.execute(
                 """INSERT INTO utterance
                    (id, discussion_id, panelist_id, seq, phase, intent, content,
                     reply_to_id, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (uid, did, panelist_id, seq, phase, intent, content, reply_to_id, now_iso()),
+                (uid, did, panelist_id, seq, phase, intent, content, reply_to_id, ts),
             )
             c.execute(
                 "UPDATE discussion SET turn_count = turn_count + 1 WHERE id = ?", (did,)
             )
+        return ts
 
     def save_consensus(
         self,

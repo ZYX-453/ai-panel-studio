@@ -92,3 +92,45 @@ def test_projected_and_runtime_events_share_same_fields(seeded_db, tmp_path) -> 
             f"  投影侧(init_db): {sorted(projected[etype])}\n"
             f"  运行时(engine):  {sorted(runtime[etype])}"
         )
+
+
+def test_projected_event_seq_starts_at_one(seeded_db) -> None:
+    """两侧的序号起点必须一致，否则 SSE 补发会吃掉第一帧。
+
+    真实踩到的：投影用 `enumerate(events)` 从 0 起，运行时引擎从 1 起，
+    而 `/stream` 的查询是 `WHERE seq > from_seq`。于是 from_seq=0 时
+    投影数据的第一帧（开场 phase）被静默过滤 —— 回看时界面直接少一个阶段。
+    """
+    path = str(seeded_db.execute("PRAGMA database_list").fetchone()[2])
+    conn = sqlite3.connect(path)
+    rows = conn.execute(
+        "SELECT discussion_id, MIN(seq), MAX(seq), COUNT(*) FROM event GROUP BY discussion_id"
+    ).fetchall()
+    conn.close()
+
+    assert rows, "夹具库里没有任何事件，测试前提不成立"
+    for did, mn, mx, cnt in rows:
+        assert (mn, mx, cnt) == (1, cnt, cnt), (
+            f"{did}: seq 应为 1..{cnt}，实际 min={mn} max={mx} 共 {cnt} 条"
+        )
+
+
+def test_projected_event_seq_starts_at_one(seeded_db) -> None:
+    """两侧的序号起点必须一致，否则 SSE 补发会吃掉第一帧。
+
+    真实踩到的：投影用 `enumerate(events)` 从 0 起，运行时引擎从 1 起，
+    而 `/stream` 的查询是 `WHERE seq > from_seq`。于是 from_seq=0 时
+    投影数据的第一帧（开场 phase）被静默过滤 —— 回看时界面直接少一个阶段。
+    """
+    path = str(seeded_db.execute("PRAGMA database_list").fetchone()[2])
+    conn = sqlite3.connect(path)
+    rows = conn.execute(
+        "SELECT discussion_id, MIN(seq), MAX(seq), COUNT(*) FROM event GROUP BY discussion_id"
+    ).fetchall()
+    conn.close()
+
+    assert rows, "夹具库里没有任何事件，测试前提不成立"
+    for did, mn, mx, cnt in rows:
+        assert (mn, mx, cnt) == (1, cnt, cnt), (
+            f"{did}: seq 应为 1..{cnt}，实际 min={mn} max={mx} 共 {cnt} 条"
+        )

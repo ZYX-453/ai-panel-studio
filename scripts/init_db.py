@@ -99,6 +99,9 @@ def project_events(conn: sqlite3.Connection) -> int:
                         "intent": intent,
                         "reply_to_utterance_seq": id_to_seq.get(reply_id),
                         "phase": phase,
+                        # 与引擎侧同名同值：界面上每句话右下角的时间戳
+                        # 只能有一个来源，不能前端自己 new Date()
+                        "created_at": ts,
                     },
                     ts,
                 )
@@ -131,7 +134,10 @@ def project_events(conn: sqlite3.Connection) -> int:
             "VALUES (?, ?, ?, ?, ?)",
             [
                 (did, i, etype, json.dumps(payload, ensure_ascii=False), ts)
-                for i, (etype, payload, ts) in enumerate(events)
+                # 从 1 开始：运行时引擎的 next_seq 也是从 1 起（max_seq 空表返回 0 再 +1）。
+                # 若这里从 0 起，SSE 的 `WHERE seq > from_seq` 在 from_seq=0 时
+                # 会把开场那一帧直接过滤掉 —— 回看时永远缺"开场"阶段标识。
+                for i, (etype, payload, ts) in enumerate(events, start=1)
             ],
         )
         written += len(events)
@@ -194,7 +200,7 @@ def self_check(conn: sqlite3.Connection) -> list[str]:
         if seqs and seqs != list(range(1, len(seqs) + 1)):
             problems.append(f"{did}: 发言序号不连续 {seqs[:12]}")
 
-    # 6. FINISHED 场次事件流 seq 必须从 0 连续，且末条为 ended
+    # 6. FINISHED 场次事件流 seq 必须从 1 连续，且末条为 ended
     for did, in conn.execute("SELECT id FROM discussion WHERE status = 'FINISHED'"):
         evs = conn.execute(
             "SELECT seq, type FROM event WHERE discussion_id = ? ORDER BY seq", (did,)
@@ -202,7 +208,7 @@ def self_check(conn: sqlite3.Connection) -> list[str]:
         if not evs:
             problems.append(f"{did}: FINISHED 但没有事件流")
             continue
-        if [e[0] for e in evs] != list(range(len(evs))):
+        if [e[0] for e in evs] != list(range(1, len(evs) + 1)):
             problems.append(f"{did}: 事件 seq 不连续（共 {len(evs)} 条）")
         if evs[-1][1] != "ended":
             problems.append(f"{did}: 事件流末条是 {evs[-1][1]}，应为 ended")

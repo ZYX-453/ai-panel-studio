@@ -281,7 +281,9 @@ button { font: inherit; color: inherit; }
   max-width: 1080px;
   margin: 0 auto;
 }
-.confirm-head { display: grid; gap: var(--s2); }
+.confirm-head { display: grid; gap: var(--s2); justify-items: start; }
+/* 返回按钮别被 grid 拉满整行，否则会漂在标题正上方 */
+.confirm-head > .btn { justify-self: start; }
 .confirm-kicker {
   margin-top: var(--s4);
   font-size: var(--f-sm);

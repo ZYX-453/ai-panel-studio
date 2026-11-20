@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -35,11 +36,19 @@ from app.store import Store
 class FakeLLM:
     """按 prompt 里的标记决定返回什么。不联网、可预测。"""
 
-    def __init__(self, *, fail_times: int = 0, converge_after: int = 2) -> None:
+    def __init__(
+        self, *, fail_times: int = 0, converge_after: int = 2, dispute_count: int = 1
+    ) -> None:
         self.fail_times = fail_times
         self.converge_after = converge_after
+        #: 每版留几条分歧。留 1 条时 settled_streak 会一路涨到收敛；
+        #: 想让它跑满轮次就留 2 条以上（>1 直接不满足收口判据）
+        self.dispute_count = dispute_count
         self.calls = 0
         self.consensus_calls = 0
+        #: 每次抽取时，prompt 里出现过的最大的「第 N 句」——
+        #: 用来回答"这次抽取有没有覆盖到最新发言"，见 test_consensus_covers_the_last_speech
+        self.consensus_reached: list[int] = []
 
     def chat(self, messages, *, temperature=0.9, max_tokens=800, json_mode=False):
         self.calls += 1
@@ -49,10 +58,17 @@ class FakeLLM:
 
         if json_mode:
             self.consensus_calls += 1
+            text = "".join(str(m.get("content", "")) for m in messages)
+            seqs = [int(x) for x in re.findall(r"第(\d+)句", text)]
+            self.consensus_reached.append(max(seqs) if seqs else 0)
             n = self.consensus_calls
             points = [f"第{i}条共识" for i in range(1, min(n, 3) + 1)]
-            # 前几版故意留一条分歧；达到阈值后清空，用来触发收敛
-            disputes = [] if n >= self.converge_after else ["双方对适用范围仍未达成一致"]
+            # 前几版故意留分歧；达到阈值后清空，用来触发收敛
+            disputes = (
+                []
+                if n >= self.converge_after
+                else [f"第{i}条分歧仍未解决" for i in range(1, self.dispute_count + 1)]
+            )
             body = json.dumps(
                 {"points": points, "disputes": disputes, "based_on_seq": 999},
                 ensure_ascii=False,
@@ -226,6 +242,32 @@ def test_validate_rejects_bad_seat() -> None:
 
 
 # ------------------------------------------------------------------ 整场
+
+
+def test_consensus_covers_the_last_speech_before_closing(store: Store) -> None:
+    """收尾总结只读 consensus_state —— 它落后于正文，总结就会漏掉最后几句。
+
+    实测证据：改这条之前，15 场里 24 句场**全部**停在「基于前 21 句」，
+    最后 3 句（往往正是最关键的那次反驳/反例）根本没进共识，
+    而收尾总结是照着这份共识写的，等于把没读过的内容当成已读过。
+
+    断言取"最后一次抽取覆盖到第几句"，而不是"抽了几次" ——
+    后者会被节奏常量 `CONSENSUS_EVERY` 的变化带偏。
+    """
+    did = make_discussion(store, max_turns=24)
+    # 分歧恒 2 条 → 永远不满足收口判据，走满 24 轮（留 1 条时第 11 句就收敛了）
+    fake = FakeLLM(converge_after=99, dispute_count=2)
+    engine = Engine(store, fake, EventBus(), config=EngineConfig(max_turns=24))
+    engine.run(did)
+
+    assert store.get_discussion(did)["ended_reason"] == "max_turns", "这场没走满轮次"
+    assert fake.consensus_reached, "整场一次共识都没抽"
+    last_reached = max(fake.consensus_reached)
+    # 第 24 句是主持人收尾语（本来就从共识生成），共识覆盖到第 23 句即可
+    assert last_reached >= 23, (
+        f"最后一次抽取只覆盖到第 {last_reached} 句，"
+        f"正文有 24 句 —— 最后几{24 - last_reached}句没进共识"
+    )
 
 
 def test_run_produces_ordered_events_and_finishes(store: Store) -> None:

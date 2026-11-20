@@ -367,8 +367,29 @@ class Engine:
             )
             turns.append(turn)
 
+            # ---- 收尾预判
+            # 这里只回答"这一句之后是不是就该收了"，用来决定要不要补抽一次共识。
+            # 真正的收尾判定放在抽取之后重做（见下面），否则会拿旧状态定生死。
+            will_close, _ = should_close(
+                turn_count=len(turns),
+                max_turns=max_turns,
+                consensus=consensus,
+                settled_streak=settled_streak,
+            )
+
             # ---- 共识抽取
-            if len(turns) % self.config.consensus_every == 0 and phase in ("EXPLORE", "CLASH"):
+            # 常规节奏：每 N 句一次，且已经进入陈述/交锋。
+            # 另外"就要收尾了"也必须抽一次 —— 收尾总结只读 consensus_state，
+            # 它落后于正文，总结就会漏掉最后几句。实测不加这一条时，24 句场
+            # 一律停在"基于前 21 句"：最后 3 句（往往正是最关键的那次反驳或反例）
+            # 根本没进共识，收尾总结却当成已经读过了。
+            # CLOSING 阶段不抽：那时每句都会让 should_close 为真，会白烧调用。
+            due_by_rhythm = (
+                len(turns) % self.config.consensus_every == 0
+                and phase in ("EXPLORE", "CLASH")
+            )
+            due_to_close = will_close and phase != "CLOSING"
+            if due_by_rhythm or due_to_close:
                 prev_disputes = len(consensus.disputes)
                 new_consensus = self._extract_consensus(did, topic, turns, consensus, seats)
                 if new_consensus is not None:
@@ -393,6 +414,8 @@ class Engine:
                         settled_streak = 0
 
             # ---- 收尾判定
+            # 用抽取之后的状态重判：补抽如果让分歧重新变多，这一轮就不该收，
+            # 否则会出现"ended_reason 写着 converged、consensus 里躺着 3 条分歧"。
             close, reason = should_close(
                 turn_count=len(turns),
                 max_turns=max_turns,

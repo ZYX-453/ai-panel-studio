@@ -56,7 +56,7 @@ export PANEL_PORT=8000
 ## 验证（四条命令）
 
 ```bash
-# 后端单元 + 接口 + 两侧事件一致性（114 条）
+# 后端单元 + 接口 + 两侧事件一致性（117 条）
 cd backend && python -m pytest
 
 # 前端：边界适配层 + SSE 连接状态（22 条）

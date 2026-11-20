@@ -196,6 +196,29 @@ def test_host_closing_prompt_asks_for_summary_without_new_claims() -> None:
     assert "收" in p or "总结" in p
 
 
+def test_host_prompt_has_exactly_one_task_per_phase() -> None:
+    """每个阶段只能有一条【本轮任务】。
+
+    这不是假想的风险：加"把议题收成一个子问题"时，一次误编辑让 CLOSING 的任务块
+    落进了 `elif CLASH` 分支，于是交锋阶段同时收到"点明这是两个问题"和
+    "做收尾总结"两条互斥指令，而 115 条测试全绿 —— 没有任何一条看着 prompt 本身。
+    """
+    expectations = {
+        "OPENING": "子问题",
+        "CLASH": "两个问题",
+        "CLOSING": "收尾总结",
+    }
+    for phase, keyword in expectations.items():
+        p = build_host_prompt(by_id("h"), topic=TOPIC, transcript=turns(), phase=phase)
+        assert p.count("【本轮任务】") == 1, f"{phase} 有 {p.count('【本轮任务】')} 条任务"
+        assert keyword in p, f"{phase} 的任务里没提到「{keyword}」"
+
+    # 陈述阶段不设任务：这一段本来就该让各方把话说完，主持人只点名不推进
+    p = build_host_prompt(by_id("h"), topic=TOPIC, transcript=turns(), phase="EXPLORE")
+    assert "【本轮任务】" not in p
+    assert "收尾总结" not in p, "EXPLORE 阶段混进了收尾任务"
+
+
 # ---------------------------------------------------------------------------
 # 共识抽取：必须只输出结构化结果，且带着"基于第几句"
 # ---------------------------------------------------------------------------

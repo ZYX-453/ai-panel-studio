@@ -495,7 +495,24 @@ class Engine:
             )
             # 重说之后仍然撞车就保留新的那句：宁可内容一般，
             # 也不要让这一轮空着 —— 空轮会让轮次与实际发言数对不上。
-            text = retried or text
+            if retried:
+                # 长度超标时取较短的那句（重说不保证更短）；只是复读时取重说的那句，
+                # 因为要的是"换一种说法"，长度不是重点。
+                text = min((text, retried), key=len) if too_long else retried
+
+        # 重说之后还是超长，只能截断。常量写 65 就不能发出 66 字的句子 ——
+        # 否则 check_ui 的门禁（卡 65）和引擎（放过任意长度）各有一套口径，
+        # 而"同一语义两处各写一遍"是这个项目复发率最高的缺陷。
+        # 实测确实有一句 66 字溜过了门禁，就是这条路。
+        if too_long and len(text) > MAX_SPEECH_CHARS:
+            log.info(
+                "%s 重说后仍有 %d 字，截到 %d 字",
+                speaker.name,
+                len(text),
+                MAX_SPEECH_CHARS,
+            )
+            text = text[: MAX_SPEECH_CHARS - 1].rstrip("，。；、,; ") + "…"
+
         return text
 
     def _generate(

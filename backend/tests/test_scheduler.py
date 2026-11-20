@@ -168,3 +168,75 @@ def test_recent_speaker_gets_cooled_down() -> None:
 def test_only_experts_in_both_debate_phases(phase: str) -> None:
     d = run([turn(1, "e1")], phase=phase)
     assert d.seat_id.startswith("e")
+
+
+# ---------------------------------------------------------------------------
+# 回归：没人被点名时，顺序不能退化成轮转
+# ---------------------------------------------------------------------------
+
+def test_default_run_does_not_degenerate_into_round_robin() -> None:
+    """没有任何点名时，顺序也不能是座位顺序的循环。
+
+    需求原文：「不允许机械式轮流发言」。
+    这一条差点被漏掉：只测"点名能打乱顺序"是不够的 ——
+    真实讨论里大多数句子并不会点名，默认路径恰恰最容易变成排班表。
+    """
+    turns: list[Turn] = []
+    picks: list[str] = []
+    for i in range(12):
+        d = run(turns)
+        picks.append(d.seat_id)
+        turns.append(turn(i + 1, d.seat_id))
+
+    round_robin = ["e1", "e2", "e3", "e4"] * 3
+    assert picks != round_robin, f"12 轮完全按座位顺序循环：{picks}"
+
+    # 更本质的判据：轮转的每一轮间隔都相同（恒为 4）。
+    # 真实讨论里每个人的发言间隔一定是长短不齐的。
+    positions: dict[str, list[int]] = {}
+    for i, sid in enumerate(picks):
+        positions.setdefault(sid, []).append(i)
+    gaps = {
+        b - a
+        for idxs in positions.values()
+        for a, b in zip(idxs, idxs[1:])
+    }
+    assert len(gaps) > 1, f"每个人发言间隔完全一致（{gaps}），这是排班不是讨论：{picks}"
+
+
+def test_focus_keyword_in_last_turn_raises_priority() -> None:
+    """上一条说到某人关心的话题，他应当更容易抢到话。
+
+    要点在于**对照**：只有两段文字相差一个关键词，选择结果必须因此改变。
+    否则测试可能只是碰巧选中了同一个人（冷却分凑巧刚好），
+    那是"通过得不对"，比失败更危险。
+    """
+    seats = (
+        Seat(id="h", role="host", seat=0, name="主持", stance="中立"),
+        Seat(id="e1", role="expert", seat=1, name="周敏", stance="远程伤害弱连接", focus=("弱连接",)),
+        Seat(id="e2", role="expert", seat=2, name="许巍", stance="远程可运营", focus=("异步协作",)),
+        Seat(id="e3", role="expert", seat=3, name="林雪", stance="应按岗位分层", focus=("岗位可远程性",)),
+        Seat(id="e4", role="expert", seat=4, name="何远", stance="早期必须线下", focus=("默契形成",)),
+    )
+
+    def history(last_text: str) -> tuple[Turn, ...]:
+        return (
+            Turn(seq=1, speaker_id="e1", text="开场。"),
+            Turn(seq=2, speaker_id="e2", text="接一句。"),
+            Turn(seq=3, speaker_id="e3", text="再补一句。"),
+            Turn(seq=4, speaker_id="e4", text="我也说说。"),
+            Turn(seq=5, speaker_id="e1", text="我补充一点。"),
+            Turn(seq=6, speaker_id="e2", text=last_text),
+        )
+
+    plain = pick_next(seats, history("我们观察到损失其实很明显。"), "EXPLORE", seed=3)
+    matched = pick_next(
+        seats, history("我们观察到弱连接的损失其实很明显。"), "EXPLORE", seed=3
+    )
+
+    assert matched.seat_id == "e1", (
+        f"话题落在「弱连接」上，应轮到周敏，实际 {matched.seat_id}（{matched.reason}）"
+    )
+    assert plain.seat_id != "e1", (
+        f"对照组也选中了周敏（{plain.reason}），说明这次选择并非由话题驱动，测试不成立"
+    )

@@ -103,10 +103,11 @@ flowchart LR
 
 ```
 db/           schema.sql（6 表 + 触发器）· seed.sql（5 场样例）
-docs/         01 PRD · 02 SCHEMA · 03 API · 04 计划 · 05 UI · 06 开发说明 · 07 核心 Prompt · 08 已完成与未完成
+docs/         01 PRD · 02 SCHEMA · 03 API · 04 计划 · 05 UI · 06 开发说明
+              07 核心 Prompt · 08 已完成与未完成 · 09 工作流说明 · screenshots/
 backend/app/  api / engine / scheduler / personas / consensus / content / lineup / store / llm
 frontend/src/ lib（api / adapter / types / router / format）· pages · components · styles
-scripts/      init_db · e2e_run · check_ui · shot
+scripts/      init_db · e2e_run · check_ui · shot · pack
 ```
 
 四个阶段与产出物的对应关系见 `docs/04-PLAN.md`；为什么代码长成这样见 `docs/06-开发说明.md`；
@@ -185,3 +186,29 @@ SSE 一共七种事件，前端只认这七种：
 5. 导出 PDF、发言可编辑（都要动数据模型，不是加个按钮的事）
 
 每一项的实测依据和反面例子都在 `docs/08-已完成与未完成.md`。
+
+---
+
+## 交付物对照
+
+| 要求 | 在哪 | 状态 |
+|---|---|---|
+| 完整项目源码 | 本仓库（`backend/` + `frontend/` + `db/` + `scripts/`） | 提交历史按 docs → UI → 测试 → 实现的顺序分层 |
+| 数据库初始化脚本 | `scripts/init_db.py --force`，DDL 在 `db/schema.sql` | 建表 + 触发器 + 5 场样例，末尾自检 `seq` 连续 |
+| ≥ 5 条高质量样例数据 | `db/seed.sql` | 5 场：2 场已结束（含分歧与共识各若干）、3 场待确认 |
+| 开发文档 | `docs/01`–`05`（PRD / 数据模型 / API / 计划 / UI）+ `06` 开发说明 | 先写契约后写代码，架构与踩坑都在 06 |
+| 核心 Prompt 记录 ≥ 5 段 | `docs/07-核心Prompt记录.md` | 开发过程 P1–P6 六段 + 运行时系统 Prompt S1–S4 |
+| 开发思路与工作流说明（1–1.5 页） | `docs/09-工作流说明.md` | 四阶段各层职责、三个典型问题、工具链如实记录 |
+| 运行指南 / 环境变量 / 技术选型 | 本文档「快速开始」「技术栈」两节 | 无 Key 也能跑，降级路径有截图 |
+| 主要 API 列表 | 本文档「主要 API」一节 | 8 个端点 + 7 种 SSE 事件 |
+| 已完成能力与后续改进方向 | 本文档上一节 + `docs/08` | 含已知限制，不粉饰 |
+| 演示视频（3 分钟） | — | **未录制**，原因与建议录制顺序见 `docs/08` |
+
+打包命令：
+
+```bash
+python scripts/pack.py          # → ../交付/AI圆桌讨论-张宇翔-20230308043.zip
+```
+
+只装源码 + 文档 + 截图，`node_modules` / `.venv` / 数据库 / 日志一律不进包；
+缺少 `docs/09` 或 `db/seed.sql` 这类硬性文件时脚本直接报错退出，不会打出一个"看起来完整"的包。

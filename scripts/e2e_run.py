@@ -5,7 +5,8 @@
 
   1. 阵容：1 位主持 + N 位专家，颜色两两不同，立场两两不同
   2. 事件流：`phase` 只在阶段真的变化时出现；每条发言前后各有一次 `panelist_state`
-  3. 纪律：内部状态词（准备发言/待机/举手）不得出现在 transcript 正文里
+  3. 纪律：panelist_state 的取值只能是「待机/准备发言/发言中」，且「准备发言/待机」
+     不得出现在 transcript 正文里（「举手」「让位」是普通动词，不在禁词表内）
   4. 断线重连：中途断开再用 `Last-Event-ID` 接上，收到的事件**不重、不漏**
   5. 收敛：最后一条事件必须是 `ended`，且 `ended_reason` 落在允许集合里
   6. 共识：版本单调不减，且 version>0 时 points 非空
@@ -29,7 +30,10 @@ import urllib.error
 import urllib.request
 from typing import Any, Iterator
 
-INTERNAL_WORDS = ("准备发言", "待机", "举手", "让位")
+#: 只收"正常发言里不可能出现"的词。「举手」「让位」是普通中文动词 ——
+#: 有场次里专家说"团队互评会现场举手定排序""该让位给新人"，那是讨论内容。
+#: 把它们当禁词会导致假红；内部状态由 panelist_state 的取值集合守住（见下文）。
+INTERNAL_WORDS = ("准备发言", "待机")
 
 
 def api(method: str, url: str, body: Any = None, timeout: float = 60.0) -> Any:
@@ -140,7 +144,12 @@ def main() -> int:
             if ev["type"] == "ended":
                 break
     else:
-        for ev in stream(url, None, args.budget):
+        # 第一段没走到 6 帧就超时了：只能从"已经收到的最后一帧"往后接。
+        # 从 None 重来会把第一段收到的帧再收一遍 —— 实测因此出现
+        # "111 帧 / 109 个不同 seq"，而库里 seq 1..109 明明无重复，
+        # 是采集端重了，不是服务端重了。断言没红错，红的是脚本自己。
+        resume_from = seen[-1]["seq"] if seen else None
+        for ev in stream(url, resume_from, args.budget):
             seen.append(ev)
             if ev["type"] == "ended":
                 break
@@ -179,6 +188,20 @@ def main() -> int:
         check(prev_state == "panelist_state", f"第 {seen[i]['seq']} 帧发言前没有状态事件")
         if next_state is not None:
             check(next_state in ("panelist_state", "consensus", "phase"), f"第 {seen[i]['seq']} 帧发言后事件异常：{next_state}")
+
+    # 内部状态词的守卫分两层，缺一层都会漏或误报：
+    # ① 状态事件的取值只能是这三个。这是真正的边界 —— 将来谁加了"举手"这种
+    #    新状态，都会在这里被抓住，不管它有没有出现在正文里。
+    # ② 正文里只禁「准备发言 / 待机」这类不可能出现在正常口语里的词。
+    #    早期还把「举手」「让位」当禁词，结果一场里专家说"团队互评会现场举手定排序"，
+    #    被判成泄漏内部状态（红了两条）—— 那是讨论内容，不是状态播报。
+    for e in seen:
+        if e["type"] == "panelist_state":
+            st = e["payload"].get("state")
+            check(
+                st in ("待机", "准备发言", "发言中"),
+                f"seq={e['seq']} 的 panelist_state 出现了未定义状态「{st}」",
+            )
 
     # 内部状态词不得出现在正文
     for u in utts:

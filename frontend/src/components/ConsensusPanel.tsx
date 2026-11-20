@@ -33,7 +33,7 @@ export function ConsensusPanel({ consensus, ended = false }: { consensus: Consen
             <>
               讨论刚开始，暂时提炼不出共识或分歧。
               <br />
-              累积 4 句发言后会首次更新，之后每 4 句刷新一次。
+              随着发言累积，这里会自动更新。
             </>
           )}
         </p>

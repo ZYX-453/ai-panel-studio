@@ -41,7 +41,7 @@ def wanted(path: Path) -> bool:
 def main() -> int:
     out_dir = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT.parent / "交付"
     out_dir.mkdir(parents=True, exist_ok=True)
-    out = out_dir / "AI圆桌讨论-张宇翔-20230308043.zip"
+    out = out_dir / "AI圆桌讨论-张宇翔-20230308060.zip"
 
     files = sorted(p for p in ROOT.rglob("*") if p.is_file() and wanted(p.relative_to(ROOT)))
 

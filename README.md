@@ -207,7 +207,7 @@ SSE 一共七种事件，前端只认这七种：
 打包命令：
 
 ```bash
-python scripts/pack.py          # → ../交付/AI圆桌讨论-张宇翔-20230308043.zip
+python scripts/pack.py          # → ../交付/AI圆桌讨论-张宇翔-20230308060.zip
 ```
 
 只装源码 + 文档 + 截图，`node_modules` / `.venv` / 数据库 / 日志一律不进包；

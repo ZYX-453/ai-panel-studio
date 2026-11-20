@@ -24,6 +24,9 @@ class Seat:
     #: 抢话倾向 0~1。同样是"性格"的一部分：有人一有缝就插话，有人得被问才开口。
     #: 由人设生成阶段提供；留 None 时调度器按 id 派生一个稳定值（不是随机）。
     eagerness: float | None = None
+    #: 头衔。只用于展示（事件 payload 里带上，前端不必再回查面板）。
+    #: 放在末尾是为了不破坏既有的位置参数调用。
+    title: str = ""
 
 
 @dataclass(frozen=True, slots=True)

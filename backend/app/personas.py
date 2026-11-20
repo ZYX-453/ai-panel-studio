@@ -181,3 +181,38 @@ def build_consensus_prompt(
         parts += ["", "【已有的共识与分歧】", previous]
 
     return "\n".join(parts)
+
+
+def build_summary_prompt(seat: Seat, *, topic: str, consensus) -> str:
+    """收尾总结的 prompt。
+
+    **刻意不传 transcript。** 总结只允许基于 consensus_state 写，
+    因为同一份 consensus 也在页面上渲染成共识面板 ——
+    如果总结另读一遍原文，就必然出现「面板说已达成、总结说仍有分歧」。
+    这是本作品在"同屏两套口径"上唯一可行的根治办法：
+    不是靠纪律要求两处写一致，而是让它们物理上只有一份可读的输入。
+    """
+    points = "\n".join(f"- {p}" for p in consensus.points) or "（无）"
+    disputes = "\n".join(f"- {d}" for d in consensus.disputes) or "（无）"
+
+    return "\n".join(
+        [
+            f"你是「{seat.name}」，本场圆桌的收尾人。",
+            "",
+            f"【讨论议题】{topic}",
+            f"【总结所依据】第 {consensus.based_on_seq} 句为止的共识记录（v{consensus.version}）",
+            "",
+            "【已达成的共识】",
+            points,
+            "",
+            "【仍未解决的分歧】",
+            disputes,
+            "",
+            "【硬性规则】",
+            "1. 只能使用上面列出的内容，不得引入新论点、新数字、新人物。",
+            "2. 分歧为零时可以说已经收敛；但不要因此夸大成「取得一致意见」——",
+            "   共识条目各自的边界仍要交代清楚。",
+            "3. 4-6 句，直接说结论，不要「感谢各位」这类客套。",
+            "4. 不给行动建议清单，除非共识里已经明确写了。",
+        ]
+    )
